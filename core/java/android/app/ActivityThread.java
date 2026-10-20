@@ -8212,6 +8212,29 @@ public final class ActivityThread extends ClientTransactionHandler
         NetworkSecurityConfigProvider.install(appContext);
         Trace.traceEnd(Trace.TRACE_TAG_ACTIVITY_MANAGER);
 
+        // HeckerOS: PIF is confined to the attestation and Play Store processes.
+        // The profile is public metadata. Only privileged Settings can write Global.
+        if (android.security.pif.PlayIntegritySpoofService.isTargetProcess(data.processName)) {
+            try {
+                String profile = Settings.Global.getString(appContext.getContentResolver(),
+                        "hecker_pif_config");
+                android.security.pif.PlayIntegritySpoofService pif =
+                        android.security.pif.PlayIntegritySpoofService.getInstance();
+                pif.loadConfig(profile);
+                if (pif.shouldSpoof(data.processName)) {
+                    pif.spoofBuildFields(data.processName);
+                    if (pif.isDroidGuard(data.processName)) {
+                        pif.spoofProperties();
+                        if (pif.isSpoofProviderEnabled()) pif.spoofProvider();
+                        if (pif.isSpoofSignatureEnabled()) pif.spoofSignature();
+                    }
+                }
+            } catch (RuntimeException error) {
+                Slog.w(TAG, "Unable to load HeckerOS integrity profile", error);
+            }
+        }
+
+
         // For backward compatibility, TrafficStats needs static access to the application context.
         // But for isolated apps which cannot access network related services, service discovery
         // is restricted. Hence, calling this would result in NPE.

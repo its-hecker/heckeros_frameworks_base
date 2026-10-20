@@ -1,0 +1,18 @@
+{
+  "repository": "AxionAOSP/android_frameworks_base",
+  "branch": "lineage-23.2",
+  "source_revision": "2017624b588861735445868ca809260bf2499f58",
+  "latest_pif_commit": "a04d222e97d60c03e28479adf1cf39dd5002827a",
+  "commit_date": "2026-10-19",
+  "checked_on": "2026-10-21",
+  "upstream_reference": "https://github.com/KOWX712/PlayIntegrityFix",
+  "target_baseline": "PixelOS-AOSP/android_frameworks_base@81b912ee97d9d4673ed4696bde30f14841b26c99 (Android 17)",
+  "adaptations": [
+    "Use public build metadata in Settings.Global hecker_pif_config, written by native privileged Settings, instead of the Axion-wide spoof-manager/AIDL stack.",
+    "ActivityThread initializes only com.google.android.gms.unstable and com.android.vending. Native property virtualization, provider and optional signature hooks run only in the attestation process.",
+    "No Google Photos/game/keybox/TrickyStore hooks are installed. No certificate private keys or preselected stale fingerprint are shipped.",
+    "Malformed/empty/incomplete profiles leave the adapter inactive. Profiles are activated on target process restart.",
+    "Native virtualization is the upstream October 19 patch applied without fuzz to the pinned Android 17 SystemProperties JNI source."
+  ],
+  "verification": "Source compilation and host regressions only. Full Android platform build and coral Play Integrity verdict testing required."
+}

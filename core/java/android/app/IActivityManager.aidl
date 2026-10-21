@@ -1081,4 +1081,12 @@ interface IActivityManager {
      * Unregisters the listener previously registered for ANR warning.
      */
     void unregisterAnrWarningListener(in IAnrWarningCallback callback);
+
+    // HeckerOS compatibility configuration; AMS scopes reads to the calling UID.
+    String getSpoofGamePropsConfig();
+    String getSpoofTrickyStoreTarget();
+    String getSpoofTrickyStoreKeyBox();
+    String getSpoofTrickyStorePatch();
+    String getHeckerSpoofConfig(int kind);
+    void setHeckerSpoofConfig(int kind, String value);
 }

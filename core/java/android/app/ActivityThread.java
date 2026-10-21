@@ -8212,6 +8212,12 @@ public final class ActivityThread extends ClientTransactionHandler
         NetworkSecurityConfigProvider.install(appContext);
         Trace.traceEnd(Trace.TRACE_TAG_ACTIVITY_MANAGER);
 
+        // HeckerOS: package-scoped Axion game profiles, before application loading.
+        if (!Process.isIsolated()) {
+            android.security.gameprops.GamePropsSpoofService.getInstance()
+                    .spoofForPackage(data.appInfo.packageName);
+        }
+
         // HeckerOS: PIF is confined to the attestation and Play Store processes.
         // The profile is public metadata. Only privileged Settings can write Global.
         if (android.security.pif.PlayIntegritySpoofService.isTargetProcess(data.processName)) {
@@ -8225,7 +8231,9 @@ public final class ActivityThread extends ClientTransactionHandler
                     pif.spoofBuildFields(data.processName);
                     if (pif.isDroidGuard(data.processName)) {
                         pif.spoofProperties();
-                        if (pif.isSpoofProviderEnabled()) pif.spoofProvider();
+                        // A configured TrickyStore keybox owns the certificate path.
+                        if (pif.isSpoofProviderEnabled() && !android.security.trickystore
+                                .TrickyStoreService.getInstance().hasKeyboxes()) pif.spoofProvider();
                         if (pif.isSpoofSignatureEnabled()) pif.spoofSignature();
                     }
                 }

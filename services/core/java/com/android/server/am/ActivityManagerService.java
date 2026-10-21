@@ -21288,4 +21288,32 @@ public class ActivityManagerService extends IActivityManager.Stub
         mAnrWarningController.notifyAnrWarning(
                 uid, anrId, errorId, anrType, consumedTimeMs, timeoutMs, description);
     }
+
+    private com.android.server.spoof.HeckerSpoofConfigStore mHeckerSpoofConfig;
+
+    private synchronized com.android.server.spoof.HeckerSpoofConfigStore heckerSpoofConfig() {
+        if (mHeckerSpoofConfig == null) {
+            mHeckerSpoofConfig = new com.android.server.spoof.HeckerSpoofConfigStore(mContext);
+        }
+        return mHeckerSpoofConfig;
+    }
+
+    @Override public String getSpoofGamePropsConfig() {
+        return heckerSpoofConfig().getForCaller(android.security.spoof.HeckerSpoofConfig.GAMES);
+    }
+    @Override public String getSpoofTrickyStoreTarget() {
+        return heckerSpoofConfig().getForCaller(android.security.spoof.HeckerSpoofConfig.TARGETS);
+    }
+    @Override public String getSpoofTrickyStoreKeyBox() {
+        return heckerSpoofConfig().getForCaller(android.security.spoof.HeckerSpoofConfig.KEYBOX);
+    }
+    @Override public String getSpoofTrickyStorePatch() {
+        return heckerSpoofConfig().getForCaller(android.security.spoof.HeckerSpoofConfig.PATCH);
+    }
+    @Override public String getHeckerSpoofConfig(int kind) {
+        return heckerSpoofConfig().getForSettings(kind);
+    }
+    @Override public void setHeckerSpoofConfig(int kind, String value) {
+        heckerSpoofConfig().put(kind, value);
+    }
 }

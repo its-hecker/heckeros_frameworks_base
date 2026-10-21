@@ -9,10 +9,16 @@
   "target_baseline": "PixelOS-AOSP/android_frameworks_base@81b912ee97d9d4673ed4696bde30f14841b26c99 (Android 17)",
   "adaptations": [
     "Use public build metadata in Settings.Global hecker_pif_config, written by native privileged Settings, instead of the Axion-wide spoof-manager/AIDL stack.",
-    "ActivityThread initializes only com.google.android.gms.unstable and com.android.vending. Native property virtualization, provider and optional signature hooks run only in the attestation process.",
-    "No Google Photos/game/keybox/TrickyStore hooks are installed. No certificate private keys or preselected stale fingerprint are shipped.",
+    "PIF initialization in ActivityThread is limited to com.google.android.gms.unstable and com.android.vending. Native property virtualization and optional signature/provider hooks run only in the attestation process. Game profiles are initialized separately for configured app packages.",
+    "GameProps and TrickyStore/keybox hooks are ported separately from the same Axion revision. Photos retains PixelOS PropImitationHooks. No private attestation keys are shipped.",
     "Malformed/empty/incomplete profiles leave the adapter inactive. Profiles are activated on target process restart.",
-    "Native virtualization is the upstream October 19 patch applied without fuzz to the pinned Android 17 SystemProperties JNI source."
+    "Native virtualization is the upstream October 19 patch applied without fuzz to the pinned Android 17 SystemProperties JNI source.",
+    "Native Settings manages game/target/keybox/patch imports through UID-scoped AMS Binder methods and atomic 0600 system files; no private key in SettingsProvider. Existing PixelOS PIF/keybox paths defer to selected Axion profiles to prevent double processing.",
+    "Ported GamePropsSpoofService and the five TrickyStore classes from the same immutable Axion source. App reads are restricted to packages assigned to their real calling UID; only primary system/root may manage imports. System/secondary/isolated UIDs do not enter app certificate hooks.",
+    "Fixed EC signing against Android 17 repackaged Bouncy Castle using the shared lightweight RSA/EC signers; signature algorithm follows the imported signing key. Imported certificate metadata is copied back into the Android 17 key response.",
+    "Android 17 ML-DSA/Curve25519, user-authentication-bound, device-ID and explicit attestation-key generation retain the native path. Selected software generation requires an imported matching keybox and a challenge. Key usage follows requested purposes; application signing identity comes from PackageManager.",
+    "Block XML entities/oversized configuration, verify imported key/certificate pairing, reject malformed games, validate patch dates, and persist configuration through atomic private system files. No new credential/keybox download endpoint or private attestation key is bundled.",
+    "When a selected TrickyStore keybox is present, ActivityThread skips the optional PIF blocking provider so it cannot intercept the certificate path. Photos stays in existing PixelOS hooks."
   ],
-  "verification": "Source compilation and host regressions only. Full Android platform build and coral Play Integrity verdict testing required."
+  "verification": "Android 17 framework/keystore javac type-check against a locked implementation JAR with generated/private API surfaces supplied; host scoped-storage/parser/game/RSA/EC certificate tests, native sanitizers and Settings SDK/resource compilation. Full Soong build, coral hardware tests and actual attestation verdict still required."
 }

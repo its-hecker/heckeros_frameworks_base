@@ -285,7 +285,8 @@ public class KeyStore2 {
             throws KeyStoreException {
         StrictMode.noteDiskRead();
 
-        KeyEntryResponse response = KeyboxImitationHooks.onGetKeyEntry(descriptor);
+        KeyEntryResponse response = android.security.trickystore.TrickyStoreService.getInstance()
+                .hasKeyboxes() ? null : KeyboxImitationHooks.onGetKeyEntry(descriptor);
         if (response != null) {
             return response;
         }

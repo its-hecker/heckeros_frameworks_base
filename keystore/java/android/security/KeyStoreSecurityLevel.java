@@ -169,7 +169,8 @@ public class KeyStoreSecurityLevel {
         StrictMode.noteDiskWrite();
 
         KeyboxImitationHooks.setSuccessFlag(false);
-        if (attestationKey == null) {
+        if (attestationKey == null && !android.security.trickystore.TrickyStoreService
+                .getInstance().hasKeyboxes()) {
             KeyMetadata metadata = KeyboxImitationHooks.generateKey(mSecurityLevel,
                     descriptor, args);
             if (metadata != null) {

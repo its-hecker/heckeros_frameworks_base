@@ -49,6 +49,8 @@ import android.util.Log;
 
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.internal.util.PropImitationHooks;
+import android.security.trickystore.TrickyStoreService;
+import android.security.trickystore.CertificateHacker;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -215,7 +217,8 @@ public class AndroidKeyStoreSpi extends KeyStoreSpi {
 
         caList[0] = leaf;
 
-        return caList;
+        if ("TrickyStoreTeeCheck".equals(alias) || "trickystore_attestation_key".equals(alias)) return caList;
+        return hackCertificateChainIfNeeded(caList);
     }
 
     @Override
@@ -270,6 +273,41 @@ public class AndroidKeyStoreSpi extends KeyStoreSpi {
             Log.w(NAME, "Cannot read MGF1 Digest setter flag value", e);
             return false;
         }
+    }
+
+    private static final ThreadLocal<Boolean> sInHack = ThreadLocal.withInitial(() -> Boolean.FALSE);
+
+    private static Certificate[] hackCertificateChainIfNeeded(Certificate[] chain) {
+        if (chain == null || chain.length == 0) {
+            return chain;
+        }
+        if (sInHack.get()) {
+            return chain;
+        }
+        sInHack.set(Boolean.TRUE);
+        try {
+            TrickyStoreService service = TrickyStoreService.getInstance();
+            if (!service.hasKeyboxes()) {
+                return chain;
+            }
+
+            int callingUid = android.os.Process.myUid();
+            String[] packages = android.app.ActivityThread.getPackageManager()
+                    .getPackagesForUid(callingUid);
+
+            if (service.needHack(callingUid, packages)) {
+                Certificate[] hackedChain = CertificateHacker.hackCertificateChain(chain);
+                if (hackedChain != null) {
+                    Log.d(TAG, "TrickyStore: Hacked certificate chain for uid=" + callingUid);
+                    return hackedChain;
+                }
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "TrickyStore: Failed to hack certificate chain", e);
+        } finally {
+            sInHack.set(Boolean.FALSE);
+        }
+        return chain;
     }
 
     @Override

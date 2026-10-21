@@ -174,6 +174,8 @@ public class PropImitationHooks {
          * Set custom model for Netflix
          * Set Pixel XL for Google Photos
          */
+        if ((sIsGms || sIsFinsky) && android.security.pif.PlayIntegritySpoofService
+                .getInstance().shouldSpoof(processName)) return;
         if (sIsGms || sIsFinsky) {
             if (!android.os.Process.isIsolated()) {
                 setPlayIntegrityProps(context);
@@ -355,6 +357,9 @@ public class PropImitationHooks {
     }
 
     public static void onEngineGetCertificateChain() {
+        // Axion's selected keybox/TrickyStore path owns certificate handling here.
+        // Keep the legacy behavior when no keybox applies to this process.
+        if (android.security.trickystore.TrickyStoreService.getInstance().hasKeyboxes()) return;
         if (sDisableKeyAttestationBlock) {
             dlog("Key attestation blocking is disabled by user");
             return;

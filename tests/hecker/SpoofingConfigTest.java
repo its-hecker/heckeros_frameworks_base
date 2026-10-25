@@ -127,9 +127,12 @@ public final class SpoofingConfigTest {
         manager.parseKeybox(xml);
         check(manager.getKeybox("EC")!=null&&manager.getKeybox("RSA")!=null,"RSA and EC imported");
         manager.parseKeybox("<a>"+keybox(keys("EC"),ecCert,"ec")+"</a>");
-        check(!manager.hasKeyboxes(),"private key must match certificate");
+        check(manager.getKeybox("EC")!=null&&manager.getKeybox("RSA")!=null,"mismatched refresh preserves prior keyboxes");
         manager.parseKeybox("<a><Key algorithm=\"ec\"><PrivateKey>bad</PrivateKey></Key></a>");
-        check(!manager.hasKeyboxes(),"invalid keybox clears state");
+        check(manager.hasKeyboxes(),"invalid refresh preserves prior keyboxes");
+        check(!manager.parseKeybox(xml.substring(0,xml.length()/2))&&manager.hasKeyboxes(),"truncated refresh keeps active keys");
+        check(!manager.parseKeybox(xml+"garbage")&&manager.hasKeyboxes(),"malformed trailing content never publishes");
+        manager.clear();check(!manager.hasKeyboxes(),"explicit deletion clears state");
 
         Binder.uid=10003;
         check(store.getForCaller(1)==null&&store.getForCaller(2)==null&&store.getForCaller(3)==null,"unselected UID sees nothing");
@@ -198,10 +201,23 @@ public final class SpoofingConfigTest {
             }
             check(identity,"package name and real signing digest: "+algorithm);
             Certificate[] original=chain.toArray(new Certificate[0]);
+            android.security.pif.PlayIntegritySpoofService.fields.put("MODEL","Test Profile Model");
             Certificate[] hacked=CertificateHacker.hackCertificateChain(original);
             check(hacked!=null&&hacked!=original&&hacked.length==2,"certificate replacement: "+algorithm);
             hacked[0].verify(algorithm.equals("EC")?ec.getPublic():rsa.getPublic());
             check(java.util.Arrays.equals(hacked[0].getPublicKey().getEncoded(),leaf.getPublic().getEncoded()),"replacement preserves key: "+algorithm);
+            ASN1Sequence hackedDescription=ASN1Sequence.getInstance(new X509CertificateHolder(hacked[0].getEncoded())
+                    .getExtension(CertificateGenerator.ATTESTATION_OID).getParsedValue());
+            java.util.Map<Integer,Integer> tagCounts=new java.util.HashMap<>();boolean modelMatches=false;
+            for(var entry:ASN1Sequence.getInstance(hackedDescription.getObjectAt(7))){
+                ASN1TaggedObject tagged=ASN1TaggedObject.getInstance(entry);int tag=tagged.getTagNo();
+                tagCounts.merge(tag,1,Integer::sum);
+                if(tag==717)modelMatches=new String(ASN1OctetString.getInstance(tagged,true).getOctets(),
+                        java.nio.charset.StandardCharsets.UTF_8).equals("Test Profile Model");
+            }
+            check(modelMatches,"PIF and attestation identity agree: "+algorithm);
+            for(int tag:new int[]{704,705,706,717,718,719})check(tagCounts.getOrDefault(tag,0)<=1,"no duplicate attestation tag: "+tag);
+            android.security.pif.PlayIntegritySpoofService.fields.clear();
         }
         Binder.uid=10002;
         check(tricky.needHack(10002,new String[]{"com.check.beta"}),"explicit leaf replacement mode");

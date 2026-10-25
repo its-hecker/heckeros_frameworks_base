@@ -1,19 +1,11 @@
 /*
  * Copyright (C) 2025-2026 AxionOS
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *      http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Copyright (C) 2026 Evolution X
+ * Copyright (C) 2026 HeckerOS
+ * SPDX-License-Identifier: Apache-2.0
+ * Adapted from Evolution-X/frameworks_base@6e9da54c4d0e71acca90091106c846919395410c.
+ * Native private configuration and UID isolation remain owned by HeckerOS.
  */
-
 package android.security.trickystore;
 
 import android.os.Build;
@@ -22,9 +14,16 @@ import android.security.keystore.KeyGenParameterSpec;
 import android.security.keystore.KeyProperties;
 import android.util.Log;
 
-import com.android.internal.org.bouncycastle.asn1.*;
+import com.android.internal.org.bouncycastle.asn1.ASN1InputStream;
+import com.android.internal.org.bouncycastle.asn1.ASN1OctetString;
+import com.android.internal.org.bouncycastle.asn1.ASN1Sequence;
+import com.android.internal.org.bouncycastle.asn1.ASN1TaggedObject;
 
 import java.io.ByteArrayInputStream;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.nio.file.Files;
 import java.security.*;
 import java.security.cert.*;
 
@@ -34,8 +33,12 @@ import java.security.cert.*;
 public final class AttestationUtils {
     private static final String TAG = "AttestationUtils";
 
-    private static byte[] sBootKey;
-    private static byte[] sBootHash;
+    private static final File CONFIG_DIR = new File("/data/system/hecker_spoof");
+    private static final File BOOT_KEY_FILE = new File(CONFIG_DIR, "boot_key");
+    private static final File HBK_FILE = new File(CONFIG_DIR, "hbk");
+
+    private static volatile byte[] sBootKey;
+    private static volatile byte[] sBootHash;
     private static volatile boolean sTeeBroken = false;
 
     private AttestationUtils() {}
@@ -49,24 +52,88 @@ public final class AttestationUtils {
     }
 
     public static byte[] getBootKey() {
-        if (sBootKey == null) {
-            sBootKey = generateRandomBytes(32);
+        byte[] key = sBootKey;
+        if (key != null) return key;
+        synchronized (AttestationUtils.class) {
+            key = sBootKey;
+            if (key == null) {
+                key = getBootKeyFromProp();
+                if (key == null) key = getBootKeyFromKeybox();
+                if (key == null) key = loadOrCreatePersisted(BOOT_KEY_FILE);
+                sBootKey = key;
+            }
         }
-        return sBootKey;
+        return key;
+    }
+
+    /**
+     * Derives a fallback verified-boot key from the active keybox's issuer certificate,
+     * so that when the real vbmeta property is unavailable the attested key is at least
+     * deterministic and tied to whatever keybox is actually signing the chain, rather than
+     * an arbitrary persisted random value with no relation to anything else we attest.
+     * Returns null if no keybox is currently loaded.
+     */
+    private static byte[] getBootKeyFromKeybox() {
+        try {
+            KeyBoxManager keyBoxManager = TrickyStoreService.getInstance().getKeyBoxManager();
+            if (keyBoxManager == null || !keyBoxManager.hasKeyboxes()) {
+                return null;
+            }
+            KeyBoxManager.KeyBox keybox = keyBoxManager.getKeybox("EC");
+            if (keybox == null) {
+                keybox = keyBoxManager.getKeybox("RSA");
+            }
+            if (keybox == null || keybox.certificates == null || keybox.certificates.isEmpty()) {
+                return null;
+            }
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            return digest.digest(keybox.certificates.get(0).getEncoded());
+        } catch (Exception e) {
+            Log.w(TAG, "Failed to derive boot key from keybox issuer", e);
+            return null;
+        }
+    }
+
+    /**
+     * Reads the real verified-boot public key digest from the bootloader property, so the
+     * RootOfTrust key we attest matches the device's actual verified-boot chain instead of a
+     * value with no relation to it. Falls back to the persisted random value only when the
+     * property is unavailable.
+     */
+    private static byte[] getBootKeyFromProp() {
+        String digest = SystemProperties.get("ro.boot.vbmeta.public_key_digest", null);
+        if (digest == null || digest.isEmpty() || digest.length() != 64) {
+            return null;
+        }
+        try {
+            return hexStringToByteArray(digest);
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to parse vbmeta.public_key_digest", e);
+            return null;
+        }
     }
 
     public static byte[] getBootHash() {
-        if (sBootHash == null) {
-            sBootHash = getBootHashFromProp();
-            if (sBootHash == null && !sTeeBroken) {
-                sBootHash = extractBootHashFromTee();
-            }
-            if (sBootHash == null) {
-                Log.w(TAG, "Failed to get boot hash from prop and TEE, using random bytes");
-                sBootHash = generateRandomBytes(32);
+        byte[] hash = sBootHash;
+        if (hash != null) return hash;
+        synchronized (AttestationUtils.class) {
+            hash = sBootHash;
+            if (hash == null) {
+                hash = getBootHashFromProp();
+                if (hash == null) hash = readPersisted(HBK_FILE);
+                if (hash == null && !sTeeBroken) {
+                    hash = extractBootHashFromTee();
+                    if (hash != null) writePersisted(HBK_FILE, hash);
+                }
+                if (hash == null) {
+                    Log.w(TAG, "Failed to get boot hash from prop, disk, and TEE, using random bytes");
+                    hash = generateRandomBytes(32);
+                    writePersisted(HBK_FILE, hash);
+                }
+                sBootHash = hash;
             }
         }
-        return sBootHash;
+        return hash;
     }
 
     public static void initBootHash() {
@@ -77,10 +144,17 @@ public final class AttestationUtils {
             Log.i(TAG, "initBootHash: Boot hash already set from prop: " + bytesToHex(hash));
             return;
         }
-        Log.i(TAG, "initBootHash: No prop set, attempting TEE extraction");
+        hash = readPersisted(HBK_FILE);
+        if (hash != null) {
+            sBootHash = hash;
+            Log.i(TAG, "initBootHash: Boot hash loaded from disk: " + bytesToHex(hash));
+            return;
+        }
+        Log.i(TAG, "initBootHash: No prop or disk state, attempting TEE extraction");
         hash = extractBootHashFromTee();
         if (hash != null) {
             sBootHash = hash;
+            writePersisted(HBK_FILE, hash);
             Log.i(TAG, "initBootHash: TEE extraction successful, setting prop");
             setVbmetaDigestProp(bytesToHex(hash));
         } else {
@@ -100,7 +174,7 @@ public final class AttestationUtils {
     private static byte[] extractBootHashFromTee() {
         try {
             String alias = "trickystore_attestation_key";
-            
+
             KeyPairGenerator kpg = KeyPairGenerator.getInstance(
                 KeyProperties.KEY_ALGORITHM_EC, "AndroidKeyStore");
             KeyGenParameterSpec spec = new KeyGenParameterSpec.Builder(alias,
@@ -110,37 +184,37 @@ public final class AttestationUtils {
                     .build();
             kpg.initialize(spec);
             kpg.generateKeyPair();
-            
+
             KeyStore ks = KeyStore.getInstance("AndroidKeyStore");
             ks.load(null);
             java.security.cert.Certificate[] chain = ks.getCertificateChain(alias);
-            
+
             if (chain == null || chain.length == 0) {
                 Log.e(TAG, "No certificate chain from AndroidKeyStore");
                 ks.deleteEntry(alias);
                 return null;
             }
-            
+
             X509Certificate leafCert = (X509Certificate) chain[0];
             byte[] extValue = leafCert.getExtensionValue("1.3.6.1.4.1.11129.2.1.17");
-            
+
             ks.deleteEntry(alias);
-            
+
             if (extValue == null) {
                 Log.e(TAG, "No attestation extension in certificate");
                 return null;
             }
-            
+
             ASN1InputStream ais = new ASN1InputStream(extValue);
             ASN1OctetString octet = (ASN1OctetString) ais.readObject();
             ais.close();
-            
+
             ASN1InputStream seqStream = new ASN1InputStream(octet.getOctets());
             ASN1Sequence keyDesc = (ASN1Sequence) seqStream.readObject();
             seqStream.close();
-            
+
             ASN1Sequence teeEnforced = (ASN1Sequence) keyDesc.getObjectAt(7);
-            
+
             for (int i = 0; i < teeEnforced.size(); i++) {
                 ASN1TaggedObject tagged = (ASN1TaggedObject) teeEnforced.getObjectAt(i);
                 if (tagged.getTagNo() == 704) {
@@ -153,7 +227,7 @@ public final class AttestationUtils {
                     }
                 }
             }
-            
+
             Log.e(TAG, "RootOfTrust not found in TEE enforced list");
             return null;
         } catch (Exception e) {
@@ -184,7 +258,7 @@ public final class AttestationUtils {
             case Build.VERSION_CODES.TIRAMISU: return 130000;
             case Build.VERSION_CODES.UPSIDE_DOWN_CAKE: return 140000;
             case Build.VERSION_CODES.VANILLA_ICE_CREAM: return 150000;
-            default: return Build.VERSION.SDK_INT >= 37 ? 170000 : 160000;
+            default: return (Build.VERSION.SDK_INT - 20) * 10000;
         }
     }
 
@@ -211,34 +285,71 @@ public final class AttestationUtils {
         return attestVersion == 4 ? 41 : attestVersion;
     }
 
-    public static int getPatchLevel(boolean isLong) {
-        TrickyStoreService.CustomPatchLevel customLevel = 
-            TrickyStoreService.getInstance().getCustomPatchLevel();
-        if (customLevel != null && customLevel.system != null) {
-            Integer parsed = parsePatchLevel(customLevel.system, isLong);
+    /**
+     * Resolve the three patch levels from a single configuration snapshot.
+     * The result is [system (YYYYMM), vendor (YYYYMMDD), boot (YYYYMMDD)].
+     */
+    public static int[] getPatchLevels(String[] packages) {
+        TrickyStoreService.CustomPatchLevel customLevel =
+                TrickyStoreService.getInstance().getCustomPatchLevelForPackage(packages);
+        int system = getPatchLevelFromConfig(customLevel, false);
+        int vendor = getVendorPatchLevelFromConfig(customLevel, true);
+        int boot = getBootPatchLevelFromConfig(customLevel, true);
+        return new int[] {system, vendor, boot};
+    }
+
+    private static int getPatchLevelFromConfig(
+            TrickyStoreService.CustomPatchLevel level, boolean isLong) {
+        if (level != null && level.system != null) {
+            Integer parsed = parsePatchLevel(level.system, isLong);
             if (parsed != null) return parsed;
         }
         return convertPatchLevel(Build.VERSION.SECURITY_PATCH, isLong);
+    }
+
+    private static int getVendorPatchLevelFromConfig(
+            TrickyStoreService.CustomPatchLevel level, boolean isLong) {
+        if (level != null && level.vendor != null) {
+            Integer parsed = parsePatchLevel(level.vendor, isLong);
+            if (parsed != null) return parsed;
+        }
+        return convertPatchLevel(Build.VERSION.SECURITY_PATCH, isLong);
+    }
+
+    private static int getBootPatchLevelFromConfig(
+            TrickyStoreService.CustomPatchLevel level, boolean isLong) {
+        if (level != null && level.boot != null) {
+            Integer parsed = parsePatchLevel(level.boot, isLong);
+            if (parsed != null) return parsed;
+        }
+        return convertPatchLevel(Build.VERSION.SECURITY_PATCH, isLong);
+    }
+
+    public static int getPatchLevel(boolean isLong) {
+        return getPatchLevel(isLong, null);
+    }
+
+    public static int getPatchLevel(boolean isLong, String[] packages) {
+        return getPatchLevelFromConfig(
+                TrickyStoreService.getInstance().getCustomPatchLevelForPackage(packages), isLong);
     }
 
     public static int getVendorPatchLevel(boolean isLong) {
-        TrickyStoreService.CustomPatchLevel customLevel = 
-            TrickyStoreService.getInstance().getCustomPatchLevel();
-        if (customLevel != null && customLevel.vendor != null) {
-            Integer parsed = parsePatchLevel(customLevel.vendor, isLong);
-            if (parsed != null) return parsed;
-        }
-        return convertPatchLevel(Build.VERSION.SECURITY_PATCH, isLong);
+        return getVendorPatchLevel(isLong, null);
+    }
+
+    public static int getVendorPatchLevel(boolean isLong, String[] packages) {
+        return getVendorPatchLevelFromConfig(
+                TrickyStoreService.getInstance().getCustomPatchLevelForPackage(packages), isLong);
     }
 
     public static int getBootPatchLevel(boolean isLong) {
-        TrickyStoreService.CustomPatchLevel customLevel = 
-            TrickyStoreService.getInstance().getCustomPatchLevel();
-        if (customLevel != null && customLevel.boot != null) {
-            Integer parsed = parsePatchLevel(customLevel.boot, isLong);
-            if (parsed != null) return parsed;
-        }
-        return convertPatchLevel(Build.VERSION.SECURITY_PATCH, isLong);
+        return getBootPatchLevel(isLong, null);
+    }
+
+    public static int getBootPatchLevel(boolean isLong, String[] packages) {
+        return getBootPatchLevelFromConfig(
+                TrickyStoreService.getInstance().getCustomPatchLevelForPackage(packages), isLong);
     }
 
     private static Integer parsePatchLevel(String value, boolean isLong) {
@@ -268,8 +379,8 @@ public final class AttestationUtils {
         try {
             String[] parts = patchString.split("-");
             if (isLong && parts.length >= 3) {
-                return Integer.parseInt(parts[0]) * 10000 + 
-                       Integer.parseInt(parts[1]) * 100 + 
+                return Integer.parseInt(parts[0]) * 10000 +
+                       Integer.parseInt(parts[1]) * 100 +
                        Integer.parseInt(parts[2]);
             } else if (parts.length >= 2) {
                 return Integer.parseInt(parts[0]) * 100 + Integer.parseInt(parts[1]);
@@ -294,6 +405,59 @@ public final class AttestationUtils {
         byte[] bytes = new byte[length];
         new SecureRandom().nextBytes(bytes);
         return bytes;
+    }
+
+    /**
+     * Loads a persisted value from {@code file}, generating and persisting
+     * a fresh 32-byte random value on first run so it stays stable across
+     * daemon restarts and reboots instead of being re-randomized every time.
+     */
+    private static byte[] loadOrCreatePersisted(File file) {
+        byte[] existing = readPersisted(file);
+        if (existing != null) {
+            return existing;
+        }
+        byte[] fresh = generateRandomBytes(32);
+        writePersisted(file, fresh);
+        return fresh;
+    }
+
+    private static byte[] readPersisted(File file) {
+        if (!file.isFile()) {
+            return null;
+        }
+        try {
+            byte[] data = Files.readAllBytes(file.toPath());
+            if (data.length == 32) {
+                return data;
+            }
+            Log.w(TAG, "Persisted value at " + file + " has unexpected length "
+                    + data.length + ", ignoring");
+        } catch (IOException e) {
+            Log.w(TAG, "Failed to read persisted value from " + file, e);
+        }
+        return null;
+    }
+
+    private static void writePersisted(File file, byte[] data) {
+        try {
+            if (!CONFIG_DIR.isDirectory() && !CONFIG_DIR.mkdirs()) {
+                Log.w(TAG, "Failed to create " + CONFIG_DIR);
+                return;
+            }
+            File tmp = new File(CONFIG_DIR, file.getName() + ".tmp");
+            try (FileOutputStream fos = new FileOutputStream(tmp)) {
+                fos.write(data);
+            }
+            if (!tmp.renameTo(file)) {
+                Log.w(TAG, "Failed to rename " + tmp + " to " + file);
+            } else {
+                file.setReadable(true, true);
+                file.setWritable(true, true);
+            }
+        } catch (IOException e) {
+            Log.w(TAG, "Failed to persist value to " + file, e);
+        }
     }
 
     private static byte[] hexStringToByteArray(String hex) {

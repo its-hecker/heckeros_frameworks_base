@@ -4,7 +4,7 @@
   "source_revision": "2017624b588861735445868ca809260bf2499f58",
   "latest_pif_commit": "a04d222e97d60c03e28479adf1cf39dd5002827a",
   "commit_date": "2026-10-19",
-  "checked_on": "2026-10-21",
+  "checked_on": "2026-10-26",
   "upstream_reference": "https://github.com/KOWX712/PlayIntegrityFix",
   "target_baseline": "PixelOS-AOSP/android_frameworks_base@81b912ee97d9d4673ed4696bde30f14841b26c99 (Android 17)",
   "adaptations": [
@@ -18,7 +18,22 @@
     "Fixed EC signing against Android 17 repackaged Bouncy Castle using the shared lightweight RSA/EC signers; signature algorithm follows the imported signing key. Imported certificate metadata is copied back into the Android 17 key response.",
     "Android 17 ML-DSA/Curve25519, user-authentication-bound, device-ID and explicit attestation-key generation retain the native path. Selected software generation requires an imported matching keybox and a challenge. Key usage follows requested purposes; application signing identity comes from PackageManager.",
     "Block XML entities/oversized configuration, verify imported key/certificate pairing, reject malformed games, validate patch dates, and persist configuration through atomic private system files. No new credential/keybox download endpoint or private attestation key is bundled.",
-    "When a selected TrickyStore keybox is present, ActivityThread skips the optional PIF blocking provider so it cannot intercept the certificate path. Photos stays in existing PixelOS hooks."
+    "When a selected TrickyStore keybox is present, ActivityThread skips the optional PIF blocking provider so it cannot intercept the certificate path. Photos stays in existing PixelOS hooks.",
+    "Align TrickyStore parsing, issuer subject caching, configured attestation identity tags, patch tags and deterministic boot-key fallback with Evolution X Android 17. The five backend files are unchanged between the immutable upstream revision and the current cnb head checked on October 26.",
+    "Retain the working Android 17 lightweight RSA/EC signer, imported key/certificate pairing checks, strict complete-XML parsing, private AMS configuration and immediate UID-scoped reads. Failed refreshes retain loaded keys; explicit disable/deletion still clears them.",
+    "Public keybox fetching and revocation checks remain in the user-invoked privileged Settings flow, rather than automatic network requests from each targeted app. Private imports and app eligibility retain HeckerOS native isolation."
   ],
-  "verification": "Android 17 framework/keystore javac type-check against a locked implementation JAR with generated/private API surfaces supplied; host scoped-storage/parser/game/RSA/EC certificate tests, native sanitizers and Settings SDK/resource compilation. Full Soong build, coral hardware tests and actual attestation verdict still required."
+  "verification": "Android 17 framework/keystore javac type-check against a locked implementation JAR with generated/private API surfaces supplied; host scoped-storage/parser/game/RSA/EC certificate tests, native sanitizers and Settings SDK/resource compilation. Full Soong build, coral hardware tests and actual attestation verdict still required.",
+  "evolution_x": {
+    "repository": "Evolution-X/frameworks_base",
+    "revision": "6e9da54c4d0e71acca90091106c846919395410c",
+    "current_head_checked": "c4d3eeb6aba62768dfb11c26711728b99daa42dd",
+    "files": [
+      "core/java/android/security/trickystore/AttestationUtils.java",
+      "core/java/android/security/trickystore/CertificateGenerator.java",
+      "core/java/android/security/trickystore/CertificateHacker.java",
+      "core/java/android/security/trickystore/KeyBoxManager.java",
+      "core/java/android/security/trickystore/TrickyStoreService.java"
+    ]
+  }
 }

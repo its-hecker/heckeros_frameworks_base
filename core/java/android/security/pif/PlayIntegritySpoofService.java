@@ -630,6 +630,10 @@ public final class PlayIntegritySpoofService {
         return mVerboseLogs;
     }
 
+    public boolean isSpoofBuildEnabled() {
+        return mSpoofBuild && mConfigLoaded;
+    }
+
     public Map<String, String> getBuildFields() {
         return mBuildFields;
     }

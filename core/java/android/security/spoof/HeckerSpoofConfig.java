@@ -10,6 +10,7 @@ public final class HeckerSpoofConfig {
     public static final int TARGETS = 2;
     public static final int KEYBOX = 3;
     public static final int PATCH = 4;
+    public static final int OPTIONS = 5;
     public static final int MAX_BYTES = 256 * 1024;
 
     private HeckerSpoofConfig() {}

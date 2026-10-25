@@ -122,6 +122,7 @@ public class PropImitationHooks {
 
     private static volatile String sProcessName;
     private static volatile boolean sIsGms, sIsFinsky, sIsPhotos;
+    private static volatile boolean sPifEnabled = true;
 
     private static final Field OFFSET_FIELD;
     private static final Unsafe UNSAFE;
@@ -168,6 +169,14 @@ public class PropImitationHooks {
         sIsGms = packageName.equals(PACKAGE_GMS) && processName.equals(PROCESS_GMS_UNSTABLE);
         sIsFinsky = packageName.equals(PACKAGE_FINSKY);
         sIsPhotos = packageName.equals(PACKAGE_GPHOTOS);
+
+        // Do not let the legacy fallback reapply a profile when the hub has
+        // disabled PIF for newly started Google services and Play Store.
+        if (sIsGms || sIsFinsky) {
+            sPifEnabled = android.provider.Settings.Global.getInt(
+                    context.getContentResolver(), "hecker_pif_enabled", 1) != 0;
+            if (!sPifEnabled) return;
+        }
 
         /* Set Certified Properties for GMSCore
          * Set Stock Fingerprint for ARCore
@@ -357,6 +366,7 @@ public class PropImitationHooks {
     }
 
     public static void onEngineGetCertificateChain() {
+        if (!sPifEnabled) return;
         // Axion's selected keybox/TrickyStore path owns certificate handling here.
         // Keep the legacy behavior when no keybox applies to this process.
         if (android.security.trickystore.TrickyStoreService.getInstance().hasKeyboxes()) return;

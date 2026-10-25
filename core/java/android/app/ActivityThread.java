@@ -8224,6 +8224,10 @@ public final class ActivityThread extends ClientTransactionHandler
             try {
                 String profile = Settings.Global.getString(appContext.getContentResolver(),
                         "hecker_pif_config");
+                if (Settings.Global.getInt(appContext.getContentResolver(),
+                        "hecker_pif_enabled", 1) == 0) {
+                    profile = null;
+                }
                 android.security.pif.PlayIntegritySpoofService pif =
                         android.security.pif.PlayIntegritySpoofService.getInstance();
                 pif.loadConfig(profile);

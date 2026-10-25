@@ -55,7 +55,7 @@ public class TrickyStoreService {
 
     /** @hide */
     public enum Mode {
-        AUTO, LEAF_HACK, GENERATE
+        AUTO, LEAF_HACK, GENERATE, SKIP
     }
 
     /** @hide */
@@ -134,6 +134,8 @@ public class TrickyStoreService {
                 String pkg = line.substring(0, line.length() - 1).trim();
                 mHackPackages.add(pkg);
                 mPackageModes.put(pkg, Mode.LEAF_HACK);
+            } else if (line.endsWith("-")) {
+                mPackageModes.put(line.substring(0, line.length() - 1).trim(), Mode.SKIP);
             } else {
                 mPackageModes.put(line, Mode.AUTO);
             }

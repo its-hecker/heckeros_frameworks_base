@@ -1,27 +1,19 @@
 {
-  "repository": "AxionAOSP/android_frameworks_base",
-  "branch": "lineage-23.2",
-  "source_revision": "2017624b588861735445868ca809260bf2499f58",
-  "latest_pif_commit": "a04d222e97d60c03e28479adf1cf39dd5002827a",
-  "commit_date": "2026-10-19",
+  "repository": "Evolution-X/frameworks_base",
+  "branch": "cnb",
+  "source_revision": "c4d3eeb6aba62768dfb11c26711728b99daa42dd",
+  "latest_pif_commit": "c4d3eeb6aba62768dfb11c26711728b99daa42dd",
   "checked_on": "2026-10-26",
   "upstream_reference": "https://github.com/KOWX712/PlayIntegrityFix",
-  "target_baseline": "PixelOS-AOSP/android_frameworks_base@81b912ee97d9d4673ed4696bde30f14841b26c99 (Android 17)",
+  "target_baseline": "its-hecker/heckeros_frameworks_base@aa9ff27ba80d5a2c57a2f1ab5b9106e639a92226 (PixelOS-derived Android 17)",
   "adaptations": [
-    "Use public build metadata in Settings.Global hecker_pif_config, written by native privileged Settings, instead of the Axion-wide spoof-manager/AIDL stack.",
-    "PIF initialization in ActivityThread is limited to com.google.android.gms.unstable and com.android.vending. Native property virtualization and optional signature/provider hooks run only in the attestation process. Game profiles are initialized separately for configured app packages.",
-    "GameProps and TrickyStore/keybox hooks are ported separately from the same Axion revision. Photos retains PixelOS PropImitationHooks. No private attestation keys are shipped.",
-    "Malformed/empty/incomplete profiles leave the adapter inactive. Profiles are activated on target process restart.",
-    "Native virtualization is the upstream October 19 patch applied without fuzz to the pinned Android 17 SystemProperties JNI source.",
-    "Native Settings manages game/target/keybox/patch imports through UID-scoped AMS Binder methods and atomic 0600 system files; no private key in SettingsProvider. Existing PixelOS PIF/keybox paths defer to selected Axion profiles to prevent double processing.",
-    "Ported GamePropsSpoofService and the five TrickyStore classes from the same immutable Axion source. App reads are restricted to packages assigned to their real calling UID; only primary system/root may manage imports. System/secondary/isolated UIDs do not enter app certificate hooks.",
-    "Fixed EC signing against Android 17 repackaged Bouncy Castle using the shared lightweight RSA/EC signers; signature algorithm follows the imported signing key. Imported certificate metadata is copied back into the Android 17 key response.",
-    "Android 17 ML-DSA/Curve25519, user-authentication-bound, device-ID and explicit attestation-key generation retain the native path. Selected software generation requires an imported matching keybox and a challenge. Key usage follows requested purposes; application signing identity comes from PackageManager.",
-    "Block XML entities/oversized configuration, verify imported key/certificate pairing, reject malformed games, validate patch dates, and persist configuration through atomic private system files. No new credential/keybox download endpoint or private attestation key is bundled.",
-    "When a selected TrickyStore keybox is present, ActivityThread skips the optional PIF blocking provider so it cannot intercept the certificate path. Photos stays in existing PixelOS hooks.",
-    "Align TrickyStore parsing, issuer subject caching, configured attestation identity tags, patch tags and deterministic boot-key fallback with Evolution X Android 17. The five backend files are unchanged between the immutable upstream revision and the current cnb head checked on October 26.",
-    "Retain the working Android 17 lightweight RSA/EC signer, imported key/certificate pairing checks, strict complete-XML parsing, private AMS configuration and immediate UID-scoped reads. Failed refreshes retain loaded keys; explicit disable/deletion still clears them.",
-    "Public keybox fetching and revocation checks remain in the user-invoked privileged Settings flow, rather than automatic network requests from each targeted app. Private imports and app eligibility retain HeckerOS native isolation."
+    "Use the current Evolution X Android 17 PIF service, including boolean/numeric JSON values, derived fingerprint fields, Play Store fingerprint-only or numeric SDK options, static-field Unsafe support and opt-in process-local certificate blocking.",
+    "Read the existing privileged Settings profile and master switch once in ActivityThread rather than adding a second Settings/Binder store. Isolated and unrelated processes remain outside the PIF path.",
+    "Retain the already tested process-local native property virtualization JNI bridge and model initial-API mapping; keep the established private UID-scoped TrickyStore imports and working Android 17 certificate signer.",
+    "Remove PixelOS certified-property loading, unconditional attestation blocking and KeyboxImitationHooks generate/get-entry call paths. The retired GMS task-permission exception is inert. Photos, ARCore and Netflix compatibility remain in their existing dedicated hooks.",
+    "Use Android JCA keys for private imports. Support unencrypted PKCS#8, SEC1 EC with certificate-supplied curve parameters and PKCS#1 RSA. Verify every imported key/certificate pair and retain prior data on any rejection.",
+    "Normalize UTF-8 BOM and wrapped Base64 imports; expose sanitized parser failures without logging key material. Manual imports are not restricted to a provider or repository.",
+    "The selected TrickyStore keybox keeps ownership of certificate generation; PIF provider blocking defaults off and is not armed over a configured keybox. No private keys are bundled or fetched by an app process."
   ],
   "verification": "Android 17 framework/keystore javac type-check against a locked implementation JAR with generated/private API surfaces supplied; host scoped-storage/parser/game/RSA/EC certificate tests, native sanitizers and Settings SDK/resource compilation. Full Soong build, coral hardware tests and actual attestation verdict still required.",
   "evolution_x": {
@@ -35,5 +27,10 @@
       "core/java/android/security/trickystore/KeyBoxManager.java",
       "core/java/android/security/trickystore/TrickyStoreService.java"
     ]
+  },
+  "native_property_bridge_origin": {
+    "repository": "AxionAOSP/android_frameworks_base",
+    "source_revision": "2017624b588861735445868ca809260bf2499f58",
+    "latest_pif_commit": "a04d222e97d60c03e28479adf1cf39dd5002827a"
   }
 }

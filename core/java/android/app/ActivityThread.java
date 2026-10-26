@@ -8237,8 +8237,8 @@ public final class ActivityThread extends ClientTransactionHandler
                         pif.spoofProperties();
                         // A configured TrickyStore keybox owns the certificate path.
                         if (pif.isSpoofProviderEnabled() && !android.security.trickystore
-                                .TrickyStoreService.getInstance().hasKeyboxes()) pif.spoofProvider();
-                        if (pif.isSpoofSignatureEnabled()) pif.spoofSignature();
+                                .TrickyStoreService.getInstance().hasKeyboxes()) pif.spoofProvider(data.processName);
+                        if (pif.isSpoofSignatureEnabled()) pif.spoofSignature(data.processName);
                     }
                 }
             } catch (RuntimeException error) {

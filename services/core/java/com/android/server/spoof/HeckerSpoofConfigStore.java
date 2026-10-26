@@ -185,6 +185,7 @@ public final class HeckerSpoofConfigStore {
     }
 
     static String validate(int kind, String value) {
+        String keyboxError = "Invalid keybox XML or encoding";
         try {
             if (value.getBytes(StandardCharsets.UTF_8).length > HeckerSpoofConfig.MAX_BYTES) {
                 throw new IllegalArgumentException();
@@ -223,15 +224,19 @@ public final class HeckerSpoofConfigStore {
                     return list.toString();
                 }
                 case HeckerSpoofConfig.KEYBOX: {
-                    String xml = value.trim();
-                    if (!xml.startsWith("<")) xml = new String(Base64.getDecoder().decode(xml), StandardCharsets.UTF_8).trim();
+                    String xml = value.strip();
+                    if (xml.startsWith("\uFEFF")) xml = xml.substring(1).strip();
+                    if (!xml.startsWith("<")) xml = new String(Base64.getMimeDecoder().decode(xml), StandardCharsets.UTF_8).strip();
+                    if (xml.startsWith("\uFEFF")) xml = xml.substring(1).strip();
                     String upper = xml.toUpperCase(Locale.ROOT);
                     if (!xml.startsWith("<") || upper.contains("<!DOCTYPE") || upper.contains("<!ENTITY")) {
                         throw new IllegalArgumentException();
                     }
                     KeyBoxManager manager = new KeyBoxManager();
-                    manager.parseKeybox(xml);
-                    if (!manager.hasKeyboxes()) throw new IllegalArgumentException();
+                    if (!manager.parseKeybox(xml) || !manager.hasKeyboxes()) {
+                        keyboxError = manager.getLastError();
+                        throw new IllegalArgumentException();
+                    }
                     return xml;
                 }
                 case HeckerSpoofConfig.PATCH: {
@@ -261,6 +266,9 @@ public final class HeckerSpoofConfigStore {
                 default: throw new IllegalArgumentException();
             }
         } catch (Exception ignored) {
+            if (kind == HeckerSpoofConfig.KEYBOX) {
+                throw new IllegalArgumentException("The keybox was not replaced: " + keyboxError);
+            }
             throw new IllegalArgumentException("Invalid compatibility configuration (type " + kind + ")");
         }
     }

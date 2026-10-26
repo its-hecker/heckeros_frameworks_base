@@ -22,10 +22,17 @@ public final class PlayIntegrityScopeTest {
         sdk.setAccessible(true);
         check("34".equals(sdk.invoke(null,"shiba","32")), "initial API follows selected Pixel model");
         check("35".equals(sdk.invoke(null,"stallion","32")), "latest device mapping");
+        p.loadConfig("FINGERPRINT=google/shiba/shiba:17/CP21/123456:user/release-keys\n"
+                +"spoofProvider=true\nspoofSignature=true\nspoofVendingSdk=35\nspoofVendingFinger=1\n");
+        check(p.isConfigLoaded()&&p.isSpoofProviderEnabled(), "current Evolution X numeric options");
+        check("1".equals(p.getSpoofVendingFinger()), "Play Store fingerprint option is retained");
+        p.loadConfig("FINGERPRINT=google/shiba/shiba:17/CP21/123456:user/release-keys\n");
+        check(!p.isSpoofProviderEnabled()&&!p.isSpoofSignatureEnabled(), "a replacement profile resets opt-in flags");
+        check("0".equals(p.getSpoofVendingFinger()), "Play Store spoofing defaults off like Evolution X");
         p.loadConfig("");
         check(!p.isConfigLoaded()&&!p.shouldSpoof("com.android.vending"), "disabled profile is inert");
         p.loadConfig("MODEL=Incomplete profile\n");
         check(!p.isConfigLoaded(), "incomplete profile must not enable native property rules");
-        System.out.println("Axion PIF parser and process scope: PASS");
+        System.out.println("Evolution X PIF parser and process scope: PASS");
     }
 }

@@ -11,20 +11,12 @@ package android.security.trickystore;
 import android.util.Log;
 
 import com.android.internal.org.bouncycastle.asn1.ASN1InputStream;
-import com.android.internal.org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import com.android.internal.org.bouncycastle.asn1.ASN1Primitive;
 import com.android.internal.org.bouncycastle.asn1.pkcs.PrivateKeyInfo;
 import com.android.internal.org.bouncycastle.asn1.pkcs.RSAPrivateKey;
 import com.android.internal.org.bouncycastle.asn1.sec.ECPrivateKey;
-import com.android.internal.org.bouncycastle.asn1.x9.ECNamedCurveTable;
-import com.android.internal.org.bouncycastle.asn1.x9.X9ECParameters;
 import com.android.internal.org.bouncycastle.asn1.x500.X500Name;
 import com.android.internal.org.bouncycastle.cert.X509CertificateHolder;
-import com.android.internal.org.bouncycastle.crypto.params.ECDomainParameters;
-import com.android.internal.org.bouncycastle.crypto.params.ECPrivateKeyParameters;
-import com.android.internal.org.bouncycastle.jcajce.provider.asymmetric.ec.BCECPrivateKey;
-import com.android.internal.org.bouncycastle.jcajce.provider.asymmetric.ec.KeyFactorySpi.EC;
-import com.android.internal.org.bouncycastle.jcajce.provider.asymmetric.rsa.KeyFactorySpi;
 
 import org.xmlpull.v1.XmlPullParser;
 import org.xmlpull.v1.XmlPullParserFactory;
@@ -55,6 +47,9 @@ import java.util.regex.Pattern;
 public class KeyBoxManager {
     private static final String TAG = "KeyBoxManager";
 
+    private volatile String mLastError = "No supported key and certificate pair";
+    public String getLastError() { return mLastError; }
+    private boolean reject(String reason) { mLastError = reason; return false; }
     private volatile Map<String, KeyBox> mKeyboxes = new ConcurrentHashMap<>();
 
     private static final Pattern PEM_HEADER = Pattern.compile("-----BEGIN ([^-]+)-----");
@@ -112,6 +107,7 @@ public class KeyBoxManager {
     public boolean parseKeybox(String xmlContent) {
         // Parse into a private map and publish it at the end, so a concurrent
         // attestation never sees a half-filled or empty keybox mid-refresh.
+        mLastError = "The keybox contains no supported EC or RSA key and certificate pair";
         Map<String, KeyBox> next = new ConcurrentHashMap<>();
         if (xmlContent != null && (xmlContent.length() > 256 * 1024
                 || xmlContent.toUpperCase(java.util.Locale.ROOT).contains("<!DOCTYPE")
@@ -239,7 +235,7 @@ public class KeyBoxManager {
                         } else if ("Key".equals(tagName)) {
                             inKey = false;
                             if (currentAlgorithm != null && privateKeyPem != null && !certificatePems.isEmpty()) {
-                                processKeybox(next, currentAlgorithm, privateKeyPem, certificatePems);
+                                if (!processKeybox(next, currentAlgorithm, privateKeyPem, certificatePems)) return false;
                                 parsedKeyCount++;
                                 boxHasKey = true;
                             }
@@ -275,112 +271,78 @@ public class KeyBoxManager {
                         + " key(s); NumberOfKeyboxes is advisory, using what parsed");
             }
 
-            if (!rootClosed || depth != 0 || next.isEmpty()) return false;
+            if (!rootClosed || depth != 0) return reject("The keybox XML is incomplete or malformed");
+            if (next.isEmpty()) return false;
             mKeyboxes = next;
             Log.i(TAG, "Parsed " + next.size() + " keyboxes");
             return true;
         } catch (Exception e) {
-            Log.e(TAG, "Failed to parse keybox XML", e);
+            mLastError = "The keybox XML is incomplete or malformed";
+            Log.e(TAG, mLastError);
             // A failed parse never publishes a partial or trailing-garbage document.
             // This also protects the private importer, which starts with an empty map.
             return false;
         }
     }
 
-    private void processKeybox(Map<String, KeyBox> target, String algorithm, String privateKeyPem,
+    private boolean processKeybox(Map<String, KeyBox> target, String algorithm, String privateKeyPem,
             List<String> certificatePems) {
+        String normalizedAlgorithm;
+        switch (algorithm.trim().toLowerCase(java.util.Locale.ROOT)) {
+            case "ec": case "ecdsa": normalizedAlgorithm = "EC"; break;
+            case "rsa": normalizedAlgorithm = "RSA"; break;
+            default: return reject("Only EC/ECDSA and RSA private keys are supported");
+        }
         try {
-            String normalizedAlgorithm;
-            switch (algorithm.toLowerCase()) {
-                case "ec":
-                case "ecdsa":
-                    normalizedAlgorithm = "EC";
-                    break;
-                case "rsa":
-                    normalizedAlgorithm = "RSA";
-                    break;
-                default:
-                    normalizedAlgorithm = algorithm;
-            }
-
-            PrivateKey privateKey = parsePrivateKey(privateKeyPem, normalizedAlgorithm);
-            List<Certificate> certificates = new ArrayList<>();
             CertificateFactory certFactory = CertificateFactory.getInstance("X.509");
-
+            List<Certificate> certificates = new ArrayList<>();
             for (String certPem : certificatePems) {
-                byte[] certBytes = parsePemContent(certPem);
-                Certificate cert = certFactory.generateCertificate(new ByteArrayInputStream(certBytes));
-                certificates.add(cert);
+                certificates.add(certFactory.generateCertificate(new ByteArrayInputStream(parsePemContent(certPem))));
             }
-
-            if (!certificates.isEmpty()) {
-                PublicKey publicKey = ((X509Certificate) certificates.get(0)).getPublicKey();
-                byte[] proof = new byte[32];
-                new java.security.SecureRandom().nextBytes(proof);
-                java.security.Signature signature = java.security.Signature.getInstance(
-                        "RSA".equals(normalizedAlgorithm) ? "SHA256withRSA" : "SHA256withECDSA");
-                signature.initSign(privateKey);
-                signature.update(proof);
-                byte[] signed = signature.sign();
-                signature.initVerify(publicKey);
-                signature.update(proof);
-                if (!signature.verify(signed)) throw new IllegalArgumentException("Key and certificate do not match");
-                KeyPair keyPair = new KeyPair(publicKey, privateKey);
-                target.put(normalizedAlgorithm, new KeyBox(keyPair, certificates));
-                Log.i(TAG, "Added keybox for algorithm: " + normalizedAlgorithm);
-            }
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to process keybox for algorithm: " + algorithm, e);
+            if (certificates.isEmpty()) return reject("The keybox contains no X.509 certificates");
+            PublicKey publicKey = certificates.get(0).getPublicKey();
+            PrivateKey privateKey = parsePrivateKey(privateKeyPem, normalizedAlgorithm, publicKey);
+            byte[] proof = new byte[32]; new java.security.SecureRandom().nextBytes(proof);
+            java.security.Signature signature = java.security.Signature.getInstance(
+                    "RSA".equals(normalizedAlgorithm) ? "SHA256withRSA" : "SHA256withECDSA");
+            signature.initSign(privateKey); signature.update(proof); byte[] signed = signature.sign();
+            signature.initVerify(publicKey); signature.update(proof);
+            if (!signature.verify(signed)) return reject("The private key does not match its first certificate");
+            target.put(normalizedAlgorithm, new KeyBox(new KeyPair(publicKey, privateKey), certificates));
+            return true;
+        } catch (java.security.cert.CertificateException badCertificate) {
+            return reject("A keybox certificate is not a valid X.509 certificate");
+        } catch (java.security.InvalidKeyException mismatch) {
+            return reject("The private key algorithm or curve does not match its first certificate");
+        } catch (Exception invalidKey) {
+            return reject("The private key could not be decoded; use unencrypted PKCS#8, SEC1 EC or PKCS#1 RSA");
         }
     }
 
-    private PrivateKey parsePrivateKey(String pem, String algorithm) throws Exception {
+    private PrivateKey parsePrivateKey(String pem, String algorithm, PublicKey certificateKey) throws Exception {
         String pemType = detectPemType(pem);
+        if ("ENCRYPTED PRIVATE KEY".equals(pemType)) throw new java.security.spec.InvalidKeySpecException();
         byte[] keyBytes = parsePemContent(pem);
-
-        if ("EC PRIVATE KEY".equals(pemType)
-                || ("EC".equals(algorithm) && pemType == null)) {
-            return parseEcPrivateKey(keyBytes, algorithm);
+        // JCA returns a key understood by Android's active signing provider. Do not
+        // construct a repackaged Bouncy Castle provider key with a null configuration.
+        if (!"EC PRIVATE KEY".equals(pemType) && !"RSA PRIVATE KEY".equals(pemType)) {
+            try { return KeyFactory.getInstance(algorithm).generatePrivate(new PKCS8EncodedKeySpec(keyBytes)); }
+            catch (java.security.spec.InvalidKeySpecException notPkcs8) { }
         }
-
-        if ("RSA PRIVATE KEY".equals(pemType)
-                || ("RSA".equals(algorithm) && pemType == null)) {
-            return parseRsaPrivateKey(keyBytes);
-        }
-
-        if ("PRIVATE KEY".equals(pemType) || "ENCRYPTED PRIVATE KEY".equals(pemType)) {
-            PrivateKeyInfo pkInfo = PrivateKeyInfo.getInstance(keyBytes);
-            if ("RSA".equals(algorithm)) {
-                return new KeyFactorySpi().generatePrivate(pkInfo);
-            }
-            if ("EC".equals(algorithm)) {
-                return new EC().generatePrivate(pkInfo);
-            }
-            PKCS8EncodedKeySpec spec = new PKCS8EncodedKeySpec(keyBytes);
-            return KeyFactory.getInstance(algorithm).generatePrivate(spec);
-        }
-
-        PKCS8EncodedKeySpec spec = new PKCS8EncodedKeySpec(keyBytes);
-        return KeyFactory.getInstance(algorithm).generatePrivate(spec);
+        return "EC".equals(algorithm) ? parseEcPrivateKey(keyBytes, certificateKey) : parseRsaPrivateKey(keyBytes);
     }
 
-    private PrivateKey parseEcPrivateKey(byte[] keyBytes, String algorithm) throws Exception {
-        try (ASN1InputStream asn1In = new ASN1InputStream(keyBytes)) {
-            ASN1Primitive asn1 = asn1In.readObject();
-            try {
-                ECPrivateKey ecPrivateKey = ECPrivateKey.getInstance(asn1);
-                X9ECParameters ecParams = ECNamedCurveTable.getByOID(
-                        (ASN1ObjectIdentifier) ecPrivateKey.getParameters());
-                ECDomainParameters domainParams = new ECDomainParameters(
-                        ecParams.getCurve(), ecParams.getG(), ecParams.getN(), ecParams.getH());
-                ECPrivateKeyParameters privParams = new ECPrivateKeyParameters(
-                        ecPrivateKey.getKey(), domainParams);
-                return new BCECPrivateKey(algorithm, privParams, null);
-            } catch (Exception e) {
-                PrivateKeyInfo pkInfo = PrivateKeyInfo.getInstance(asn1);
-                return new EC().generatePrivate(pkInfo);
-            }
+    private PrivateKey parseEcPrivateKey(byte[] keyBytes, PublicKey certificateKey) throws Exception {
+        if (!(certificateKey instanceof java.security.interfaces.ECPublicKey)) {
+            throw new java.security.InvalidKeyException();
         }
+        ECPrivateKey sec1 = ECPrivateKey.getInstance(keyBytes);
+        // SEC1 allows its curve parameters to be omitted. The matching leaf certificate
+        // already supplies the curve; the sign/verify check above still proves the pair.
+        java.security.spec.ECParameterSpec parameters =
+                ((java.security.interfaces.ECPublicKey) certificateKey).getParams();
+        return KeyFactory.getInstance("EC").generatePrivate(
+                new java.security.spec.ECPrivateKeySpec(sec1.getKey(), parameters));
     }
 
     private PrivateKey parseRsaPrivateKey(byte[] keyBytes) throws Exception {
@@ -400,7 +362,7 @@ public class KeyBoxManager {
                 return KeyFactory.getInstance("RSA").generatePrivate(rsaSpec);
             } catch (Exception e) {
                 PrivateKeyInfo pkInfo = PrivateKeyInfo.getInstance(asn1);
-                return new KeyFactorySpi().generatePrivate(pkInfo);
+                return KeyFactory.getInstance("RSA").generatePrivate(new PKCS8EncodedKeySpec(keyBytes));
             }
         }
     }

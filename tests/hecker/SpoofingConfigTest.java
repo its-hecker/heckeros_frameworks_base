@@ -123,10 +123,22 @@ public final class SpoofingConfigTest {
         String xml="<AndroidAttestation>"+keybox(ec,ecCert,"ec")+keybox(rsa,rsaCert,"rsa")+"</AndroidAttestation>";
         store.put(3,Base64.getEncoder().encodeToString(xml.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
         check(store.getForCaller(3)==null,"system services do not enter app certificate hooks");
+        store.put(3,"\uFEFF"+xml);
+        check(store.getForSettings(3).equals(xml),"UTF-8 BOM is normalized before XML import");
+        store.put(3,Base64.getMimeEncoder(64,new byte[]{'\n'}).encodeToString(xml.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        check(store.getForSettings(3).equals(xml),"wrapped Base64 manual imports are accepted");
         KeyBoxManager manager=new KeyBoxManager();
+        byte[] sec1=new com.android.internal.org.bouncycastle.asn1.sec.ECPrivateKey(
+                ((java.security.interfaces.ECPrivateKey)ec.getPrivate()).getS()).getEncoded();
+        String sec1Xml="<a><Key algorithm=\" ECDSA \"><PrivateKey>"+pem("EC PRIVATE KEY",sec1)
+                +"</PrivateKey><CertificateChain><Certificate>"+pem("CERTIFICATE",ecCert.getEncoded())
+                +"</Certificate></CertificateChain></Key></a>";
+        check(manager.parseKeybox(sec1Xml)&&manager.getKeybox("EC")!=null,
+                "SEC1 EC keys without embedded curve parameters use the matching certificate curve");
         manager.parseKeybox(xml);
         check(manager.getKeybox("EC")!=null&&manager.getKeybox("RSA")!=null,"RSA and EC imported");
-        manager.parseKeybox("<a>"+keybox(keys("EC"),ecCert,"ec")+"</a>");
+        check(!manager.parseKeybox("<a>"+keybox(keys("EC"),ecCert,"ec")+"</a>"),"mismatched key is rejected");
+        check(manager.getLastError().contains("does not match"),"mismatched import reports a specific safe reason");
         check(manager.getKeybox("EC")!=null&&manager.getKeybox("RSA")!=null,"mismatched refresh preserves prior keyboxes");
         manager.parseKeybox("<a><Key algorithm=\"ec\"><PrivateKey>bad</PrivateKey></Key></a>");
         check(manager.hasKeyboxes(),"invalid refresh preserves prior keyboxes");

@@ -48,7 +48,6 @@ import android.system.keystore2.ResponseCode;
 import android.util.Log;
 
 import com.android.internal.annotations.VisibleForTesting;
-import com.android.internal.util.PropImitationHooks;
 import android.security.trickystore.TrickyStoreService;
 import android.security.trickystore.CertificateHacker;
 
@@ -184,7 +183,9 @@ public class AndroidKeyStoreSpi extends KeyStoreSpi {
 
     @Override
     public Certificate[] engineGetCertificateChain(String alias) {
-        PropImitationHooks.onEngineGetCertificateChain();
+        if (android.security.pif.PlayIntegritySpoofService.shouldBlockCertificateChain()) {
+            throw new UnsupportedOperationException();
+        }
 
         KeyEntryResponse response = getKeyMetadata(alias);
 

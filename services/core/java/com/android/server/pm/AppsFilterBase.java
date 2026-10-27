@@ -334,6 +334,10 @@ public abstract class AppsFilterBase implements AppsFilterSnapshot {
             Trace.traceBegin(TRACE_TAG_PACKAGE_MANAGER, "shouldFilterApplication");
         }
         try {
+            // Explicit privacy applies before query-all and visibility caches.
+            if (HeckerRootVisibility.shouldHide(callingUid, callingSetting, targetPkgSetting)) {
+                return true;
+            }
             int callingAppId = UserHandle.getAppId(callingUid);
             if (callingAppId < Process.FIRST_APPLICATION_UID
                     || targetPkgSetting.getAppId() < Process.FIRST_APPLICATION_UID

@@ -16,6 +16,8 @@
 
 package com.android.server.pm;
 
+import android.content.Context;
+
 import static android.os.Trace.TRACE_TAG_PACKAGE_MANAGER;
 import static android.os.UserHandle.USER_ALL;
 import static android.os.UserHandle.USER_NULL;
@@ -95,6 +97,7 @@ import java.util.Objects;
  */
 @VisibleForTesting(visibility = VisibleForTesting.Visibility.PACKAGE)
 public final class AppsFilterImpl extends AppsFilterLocked implements Watchable, Snappable {
+    private Context mHeckerRootContext;
     /**
      * A cached snapshot.
      */
@@ -450,6 +453,7 @@ public final class AppsFilterImpl extends AppsFilterLocked implements Watchable,
                 forcedQueryablePackageNames, forceSystemAppsQueryable, null,
                 injector.getHandler());
         featureConfig.setAppsFilter(appsFilter);
+        appsFilter.mHeckerRootContext = injector.getContext();
         return appsFilter;
     }
 
@@ -497,6 +501,7 @@ public final class AppsFilterImpl extends AppsFilterLocked implements Watchable,
     }
 
     public void onSystemReady(PackageManagerInternal pmInternal) {
+        HeckerRootVisibility.start(mHeckerRootContext);
         mOverlayReferenceMapper.rebuildIfDeferred();
         mFeatureConfig.onSystemReady();
 

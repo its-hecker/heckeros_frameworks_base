@@ -123,13 +123,28 @@ public final class SpoofingConfigTest {
         String xml="<AndroidAttestation>"+keybox(ec,ecCert,"ec")+keybox(rsa,rsaCert,"rsa")+"</AndroidAttestation>";
         store.put(3,Base64.getEncoder().encodeToString(xml.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
         check(store.getForCaller(3)==null,"system services do not enter app certificate hooks");
+        store.put(3,"\uFEFF"+xml);
+        check(store.getForSettings(3).equals(xml),"UTF-8 BOM is normalized before XML import");
+        store.put(3,Base64.getMimeEncoder(64,new byte[]{'\n'}).encodeToString(xml.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        check(store.getForSettings(3).equals(xml),"wrapped Base64 manual imports are accepted");
         KeyBoxManager manager=new KeyBoxManager();
+        byte[] sec1=new com.android.internal.org.bouncycastle.asn1.sec.ECPrivateKey(
+                ((java.security.interfaces.ECPrivateKey)ec.getPrivate()).getS()).getEncoded();
+        String sec1Xml="<a><Key algorithm=\" ECDSA \"><PrivateKey>"+pem("EC PRIVATE KEY",sec1)
+                +"</PrivateKey><CertificateChain><Certificate>"+pem("CERTIFICATE",ecCert.getEncoded())
+                +"</Certificate></CertificateChain></Key></a>";
+        check(manager.parseKeybox(sec1Xml)&&manager.getKeybox("EC")!=null,
+                "SEC1 EC keys without embedded curve parameters use the matching certificate curve");
         manager.parseKeybox(xml);
         check(manager.getKeybox("EC")!=null&&manager.getKeybox("RSA")!=null,"RSA and EC imported");
-        manager.parseKeybox("<a>"+keybox(keys("EC"),ecCert,"ec")+"</a>");
-        check(!manager.hasKeyboxes(),"private key must match certificate");
+        check(!manager.parseKeybox("<a>"+keybox(keys("EC"),ecCert,"ec")+"</a>"),"mismatched key is rejected");
+        check(manager.getLastError().contains("does not match"),"mismatched import reports a specific safe reason");
+        check(manager.getKeybox("EC")!=null&&manager.getKeybox("RSA")!=null,"mismatched refresh preserves prior keyboxes");
         manager.parseKeybox("<a><Key algorithm=\"ec\"><PrivateKey>bad</PrivateKey></Key></a>");
-        check(!manager.hasKeyboxes(),"invalid keybox clears state");
+        check(manager.hasKeyboxes(),"invalid refresh preserves prior keyboxes");
+        check(!manager.parseKeybox(xml.substring(0,xml.length()/2))&&manager.hasKeyboxes(),"truncated refresh keeps active keys");
+        check(!manager.parseKeybox(xml+"garbage")&&manager.hasKeyboxes(),"malformed trailing content never publishes");
+        manager.clear();check(!manager.hasKeyboxes(),"explicit deletion clears state");
 
         Binder.uid=10003;
         check(store.getForCaller(1)==null&&store.getForCaller(2)==null&&store.getForCaller(3)==null,"unselected UID sees nothing");
@@ -198,10 +213,23 @@ public final class SpoofingConfigTest {
             }
             check(identity,"package name and real signing digest: "+algorithm);
             Certificate[] original=chain.toArray(new Certificate[0]);
+            android.security.pif.PlayIntegritySpoofService.fields.put("MODEL","Test Profile Model");
             Certificate[] hacked=CertificateHacker.hackCertificateChain(original);
             check(hacked!=null&&hacked!=original&&hacked.length==2,"certificate replacement: "+algorithm);
             hacked[0].verify(algorithm.equals("EC")?ec.getPublic():rsa.getPublic());
             check(java.util.Arrays.equals(hacked[0].getPublicKey().getEncoded(),leaf.getPublic().getEncoded()),"replacement preserves key: "+algorithm);
+            ASN1Sequence hackedDescription=ASN1Sequence.getInstance(new X509CertificateHolder(hacked[0].getEncoded())
+                    .getExtension(CertificateGenerator.ATTESTATION_OID).getParsedValue());
+            java.util.Map<Integer,Integer> tagCounts=new java.util.HashMap<>();boolean modelMatches=false;
+            for(var entry:ASN1Sequence.getInstance(hackedDescription.getObjectAt(7))){
+                ASN1TaggedObject tagged=ASN1TaggedObject.getInstance(entry);int tag=tagged.getTagNo();
+                tagCounts.merge(tag,1,Integer::sum);
+                if(tag==717)modelMatches=new String(ASN1OctetString.getInstance(tagged,true).getOctets(),
+                        java.nio.charset.StandardCharsets.UTF_8).equals("Test Profile Model");
+            }
+            check(modelMatches,"PIF and attestation identity agree: "+algorithm);
+            for(int tag:new int[]{704,705,706,717,718,719})check(tagCounts.getOrDefault(tag,0)<=1,"no duplicate attestation tag: "+tag);
+            android.security.pif.PlayIntegritySpoofService.fields.clear();
         }
         Binder.uid=10002;
         check(tricky.needHack(10002,new String[]{"com.check.beta"}),"explicit leaf replacement mode");
@@ -209,6 +237,26 @@ public final class SpoofingConfigTest {
         Binder.uid=10003;
         check(!tricky.hasKeyboxes(),"unselected process cannot retain another caller's keybox");
         Binder.uid=1000;
+        store.put(HeckerSpoofConfig.OPTIONS,"{\"trickystore_enabled\":false}");
+        Binder.uid=10001;
+        check(store.getForCaller(2)==null&&store.getForCaller(3)==null&&store.getForCaller(4)==null,"master switch gates targets, private keys and patch");
+        check(store.getForCaller(1)!=null,"TrickyStore master does not disable game profiles");
+        check(store.getForCaller(HeckerSpoofConfig.OPTIONS)==null,"private options are not exposed to app callers");
+        Binder.uid=1000;
+        check(store.getForSettings(3).equals(xml),"disable preserves the imported keybox");
+        store.put(HeckerSpoofConfig.OPTIONS,"{\"trickystore_enabled\":true}");
+        store.put(HeckerSpoofConfig.TARGETS,"com.game.alpha-\ncom.check.beta?");
+        Binder.uid=10001;
+        check(store.getForCaller(2).contains("SKIP"),"Evolution X skip suffix is canonicalized");
+        check(store.getForCaller(3)==null&&store.getForCaller(4)==null,"Skip does not disclose private keys or patch data");
+        check(!tricky.needHack(10001,new String[]{"com.game.alpha"})&&!tricky.needGenerate(10001,new String[]{"com.game.alpha"}),"Skip leaves the native chain untouched");
+        Binder.uid=1000;
+        store.put(HeckerSpoofConfig.TARGETS,"org.lsposed.manager!\ncom.game.alpha!");
+        context.packages.names.put(10004,new String[]{"org.lsposed.manager"});Binder.uid=10004;
+        check(store.getForCaller(3)==null,"Xposed managers remain excluded even after a target import");
+        Binder.uid=1000;
+        rejected(()->store.put(HeckerSpoofConfig.OPTIONS,"{\"trickystore_enabled\":\"true\"}"),"master option requires a boolean");
+        rejected(()->store.put(HeckerSpoofConfig.OPTIONS,"{\"trickystore_enabled\":true,\"other\":true}"),"unknown option rejected");
         store.put(3,null);
         Binder.uid=10001;
         check(!tricky.hasKeyboxes()&&!tricky.needGenerate(10001,new String[]{"com.game.alpha"}),"removing keybox disables certificate path");

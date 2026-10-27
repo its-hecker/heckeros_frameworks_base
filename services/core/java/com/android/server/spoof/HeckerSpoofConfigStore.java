@@ -26,6 +26,9 @@ import java.util.Set;
 
 /** System-only storage; private key material never enters SettingsProvider or logs. */
 public final class HeckerSpoofConfigStore {
+    private static final Set<String> EXCLUDED_TARGETS = Set.of("org.lsposed.manager", "io.github.lsposed.manager",
+            "de.robv.android.xposed.installer", "org.meowcat.edxposed.manager", "com.solohsu.android.edxp.manager",
+            "io.va.exposed", "com.topjohnwu.lsplant.manager", "me.weishu.exposed");
     private static final Set<String> GAME_FIELDS = Set.of(
             "BRAND", "MANUFACTURER", "MODEL", "DEVICE", "PRODUCT", "BOARD", "HARDWARE",
             "FINGERPRINT", "ID", "DISPLAY", "TYPE", "TAGS", "BOOTLOADER", "INCREMENTAL", "RELEASE");
@@ -36,7 +39,7 @@ public final class HeckerSpoofConfigStore {
     public HeckerSpoofConfigStore(Context context) { mContext = context; }
 
     private static void checkKind(int kind) {
-        if (kind < HeckerSpoofConfig.GAMES || kind > HeckerSpoofConfig.PATCH) {
+        if (kind < HeckerSpoofConfig.GAMES || kind > HeckerSpoofConfig.OPTIONS) {
             throw new IllegalArgumentException("Unknown compatibility configuration");
         }
     }
@@ -56,7 +59,7 @@ public final class HeckerSpoofConfigStore {
 
     private void load() {
         if (mLoaded) return;
-        for (int kind = HeckerSpoofConfig.GAMES; kind <= HeckerSpoofConfig.PATCH; kind++) {
+        for (int kind = HeckerSpoofConfig.GAMES; kind <= HeckerSpoofConfig.OPTIONS; kind++) {
             try {
                 AtomicFile source = file(kind);
                 if (!source.getBaseFile().exists()) continue;
@@ -109,10 +112,18 @@ public final class HeckerSpoofConfigStore {
         checkKind(kind);
         load();
         int uid = Binder.getCallingUid();
+        if (kind == HeckerSpoofConfig.OPTIONS) return null;
+        if (kind != HeckerSpoofConfig.GAMES) {
+            try {
+                String options = mValues.get(HeckerSpoofConfig.OPTIONS);
+                if (options != null && !new JSONObject(options).optBoolean("trickystore_enabled", true)) return null;
+            } catch (Exception unavailable) { return null; }
+        }
         if (UserHandle.getUserId(uid) != UserHandle.USER_SYSTEM
                 || UserHandle.getAppId(uid) < Process.FIRST_APPLICATION_UID) return null;
         String[] packages = mContext.getPackageManager().getPackagesForUid(uid);
         if (packages == null) return null;
+        for (String name : packages) if (EXCLUDED_TARGETS.contains(name)) return null;
         try {
             if (kind == HeckerSpoofConfig.GAMES) {
                 String value = mValues.get(kind);
@@ -131,7 +142,11 @@ public final class HeckerSpoofConfigStore {
                 ownTargets.put(new JSONObject().put("package", name).put("mode", targets.get(name)));
             }
             if (ownTargets.length() == 0) return null;
-            return kind == HeckerSpoofConfig.TARGETS ? ownTargets.toString() : mValues.get(kind);
+            if (kind == HeckerSpoofConfig.TARGETS) return ownTargets.toString();
+            // A Skip target does not need access to the imported private key or patch data.
+            boolean activeTarget = false;
+            for (String name : packages) if (targets.containsKey(name) && !"SKIP".equals(targets.get(name))) activeTarget = true;
+            return activeTarget ? mValues.get(kind) : null;
         } catch (Exception ignored) {
             return null;
         }
@@ -139,7 +154,7 @@ public final class HeckerSpoofConfigStore {
 
     private static boolean packageName(String name) {
         return name != null && name.length() <= 255
-                && name.matches("[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+");
+                && (name.equals("android") || name.matches("[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+"));
     }
 
     static Map<String, String> targets(String value) throws Exception {
@@ -155,14 +170,14 @@ public final class HeckerSpoofConfigStore {
             for (String line : value.split("\\R")) {
                 line = line.trim();
                 if (line.isEmpty() || line.startsWith("#")) continue;
-                String mode = line.endsWith("!") ? "GENERATE" : line.endsWith("?") ? "LEAF_HACK" : "AUTO";
+                String mode = line.endsWith("!") ? "GENERATE" : line.endsWith("?") ? "LEAF_HACK" : line.endsWith("-") ? "SKIP" : "AUTO";
                 String name = mode.equals("AUTO") ? line : line.substring(0, line.length() - 1).trim();
                 result.put(name, mode);
             }
         }
         if (result.size() > 512) throw new IllegalArgumentException();
         for (Map.Entry<String, String> item : result.entrySet()) {
-            if (!packageName(item.getKey()) || !Set.of("AUTO", "GENERATE", "LEAF_HACK").contains(item.getValue())) {
+            if (!packageName(item.getKey()) || !Set.of("AUTO", "GENERATE", "LEAF_HACK", "SKIP").contains(item.getValue())) {
                 throw new IllegalArgumentException();
             }
         }
@@ -170,11 +185,17 @@ public final class HeckerSpoofConfigStore {
     }
 
     static String validate(int kind, String value) {
+        String keyboxError = "Invalid keybox XML or encoding";
         try {
             if (value.getBytes(StandardCharsets.UTF_8).length > HeckerSpoofConfig.MAX_BYTES) {
                 throw new IllegalArgumentException();
             }
             switch (kind) {
+                case HeckerSpoofConfig.OPTIONS: {
+                    JSONObject input = new JSONObject(value);
+                    if (input.length() != 1 || !(input.get("trickystore_enabled") instanceof Boolean)) throw new IllegalArgumentException();
+                    return new JSONObject().put("trickystore_enabled", input.getBoolean("trickystore_enabled")).toString();
+                }
                 case HeckerSpoofConfig.GAMES: {
                     JSONObject input = new JSONObject(value);
                     JSONObject games = input.getJSONObject("games");
@@ -203,15 +224,19 @@ public final class HeckerSpoofConfigStore {
                     return list.toString();
                 }
                 case HeckerSpoofConfig.KEYBOX: {
-                    String xml = value.trim();
-                    if (!xml.startsWith("<")) xml = new String(Base64.getDecoder().decode(xml), StandardCharsets.UTF_8).trim();
+                    String xml = value.strip();
+                    if (xml.startsWith("\uFEFF")) xml = xml.substring(1).strip();
+                    if (!xml.startsWith("<")) xml = new String(Base64.getMimeDecoder().decode(xml), StandardCharsets.UTF_8).strip();
+                    if (xml.startsWith("\uFEFF")) xml = xml.substring(1).strip();
                     String upper = xml.toUpperCase(Locale.ROOT);
                     if (!xml.startsWith("<") || upper.contains("<!DOCTYPE") || upper.contains("<!ENTITY")) {
                         throw new IllegalArgumentException();
                     }
                     KeyBoxManager manager = new KeyBoxManager();
-                    manager.parseKeybox(xml);
-                    if (!manager.hasKeyboxes()) throw new IllegalArgumentException();
+                    if (!manager.parseKeybox(xml) || !manager.hasKeyboxes()) {
+                        keyboxError = manager.getLastError();
+                        throw new IllegalArgumentException();
+                    }
                     return xml;
                 }
                 case HeckerSpoofConfig.PATCH: {
@@ -241,6 +266,9 @@ public final class HeckerSpoofConfigStore {
                 default: throw new IllegalArgumentException();
             }
         } catch (Exception ignored) {
+            if (kind == HeckerSpoofConfig.KEYBOX) {
+                throw new IllegalArgumentException("The keybox was not replaced: " + keyboxError);
+            }
             throw new IllegalArgumentException("Invalid compatibility configuration (type " + kind + ")");
         }
     }

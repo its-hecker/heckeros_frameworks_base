@@ -8224,6 +8224,10 @@ public final class ActivityThread extends ClientTransactionHandler
             try {
                 String profile = Settings.Global.getString(appContext.getContentResolver(),
                         "hecker_pif_config");
+                if (Settings.Global.getInt(appContext.getContentResolver(),
+                        "hecker_pif_enabled", 1) == 0) {
+                    profile = null;
+                }
                 android.security.pif.PlayIntegritySpoofService pif =
                         android.security.pif.PlayIntegritySpoofService.getInstance();
                 pif.loadConfig(profile);
@@ -8233,8 +8237,8 @@ public final class ActivityThread extends ClientTransactionHandler
                         pif.spoofProperties();
                         // A configured TrickyStore keybox owns the certificate path.
                         if (pif.isSpoofProviderEnabled() && !android.security.trickystore
-                                .TrickyStoreService.getInstance().hasKeyboxes()) pif.spoofProvider();
-                        if (pif.isSpoofSignatureEnabled()) pif.spoofSignature();
+                                .TrickyStoreService.getInstance().hasKeyboxes()) pif.spoofProvider(data.processName);
+                        if (pif.isSpoofSignatureEnabled()) pif.spoofSignature(data.processName);
                     }
                 }
             } catch (RuntimeException error) {

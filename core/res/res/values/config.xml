@@ -6076,6 +6076,12 @@
          If non-positive, then the refresh rate is unchanged even if thresholds are configured. -->
     <integer name="config_defaultRefreshRateInZone">0</integer>
 
+    <!-- Optional low-zone exit margin in legacy brightness steps (1/254).
+         Zero retains the native threshold policy. Devices with visible gamma
+         changes between refresh rates can keep their blocking-zone vote until
+         brightness exceeds the entry threshold plus this margin. -->
+    <integer name="config_lowZoneRefreshRateHysteresis">0</integer>
+
     <!-- The display uses different gamma curves for different refresh rates. It's hard for panel
          vendors to tune the curves to have exact same brightness for different refresh rate. So
          flicker could be observed at switch time. The issue can be observed on the screen with

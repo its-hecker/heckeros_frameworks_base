@@ -1887,6 +1887,9 @@ public class DisplayModeDirector {
 
         private float mBrightness = PowerManager.BRIGHTNESS_INVALID_FLOAT;
 
+        @Nullable
+        private final LowZoneBrightnessHysteresis mLowZoneHysteresis;
+
         private final Context mContext;
         private final Injector mInjector;
         private final Handler mHandler;
@@ -1935,6 +1938,13 @@ public class DisplayModeDirector {
             mContext = context;
             mHandler = handler;
             mInjector = injector;
+            // Zero preserves the native policy. Device overlays opt into a margin
+            // expressed in the same legacy brightness steps as the zone thresholds.
+            int hysteresisSteps = context.getResources().getInteger(
+                    R.integer.config_lowZoneRefreshRateHysteresis);
+            mLowZoneHysteresis = hysteresisSteps > 0
+                    ? new LowZoneBrightnessHysteresis(Math.min(254, hysteresisSteps) / 254f)
+                    : null;
             updateBlockingZoneThresholds(/* displayDeviceConfig= */ null,
                 /* attemptReadFromFeatureParams= */ false);
             mRefreshRateInHighZone = context.getResources().getInteger(
@@ -2429,6 +2439,7 @@ public class DisplayModeDirector {
 
             updateSensorStatus();
             synchronized (mLock) {
+                resetLowZoneHysteresis();
                 updateFlickerRefreshRateVotes();
             }
         }
@@ -2482,6 +2493,10 @@ public class DisplayModeDirector {
          * @return True if we're in the low zone
          */
         private boolean isInsideLowZone(float brightness, float lux) {
+            if (mLowZoneHysteresis != null) {
+                return mLowZoneHysteresis.update(brightness, lux,
+                        mLowDisplayBrightnessThresholds, mLowAmbientBrightnessThresholds);
+            }
             for (int i = 0; i < mLowDisplayBrightnessThresholds.length; i++) {
                 float disp = mLowDisplayBrightnessThresholds[i];
                 float ambi = mLowAmbientBrightnessThresholds[i];
@@ -2538,6 +2553,7 @@ public class DisplayModeDirector {
         @GuardedBy("mLock")
         private void updateFlickerRefreshRateVotes() {
             if (!mRefreshRateChangeable || mLowPowerModeEnabled) {
+                resetLowZoneHysteresis();
                 // Revoke previous vote from BrightnessObserver
                 mVotesStorage.updateGlobalVote(Vote.PRIORITY_FLICKER_REFRESH_RATE, null);
                 mVotesStorage.updateGlobalVote(Vote.PRIORITY_FLICKER_REFRESH_RATE_SWITCH, null);
@@ -2547,6 +2563,7 @@ public class DisplayModeDirector {
             Vote refreshRateSwitchingVote = null;
 
             if (Float.isNaN(mBrightness)) {
+                resetLowZoneHysteresis();
                 // Either the setting isn't available or we shouldn't be observing yet anyways.
                 // Either way, just bail out since there's nothing we can do here.
                 return;
@@ -2601,6 +2618,13 @@ public class DisplayModeDirector {
                     refreshRateSwitchingVote);
         }
 
+        @GuardedBy("mLock")
+        private void resetLowZoneHysteresis() {
+            if (mLowZoneHysteresis != null) {
+                mLowZoneHysteresis.reset();
+            }
+        }
+
         private boolean hasValidLowZone() {
             return (mRefreshRateInLowZone > 0 || hasLowLightVrrConfig())
                     && (mShouldObserveDisplayLowChange || mShouldObserveAmbientLowChange);
@@ -2629,6 +2653,11 @@ public class DisplayModeDirector {
 
             if (mDefaultDisplayState != state) {
                 mDefaultDisplayState = state;
+                if (state != Display.STATE_ON) {
+                    synchronized (mLock) {
+                        resetLowZoneHysteresis();
+                    }
+                }
                 updateSensorStatus();
             }
         }

@@ -3836,6 +3836,9 @@ public final class Settings {
         @UnsupportedAppUsage
         public String getStringForUser(ContentResolver cr, String name,
                 final @CanBeCURRENT @UserIdInt int userId) {
+            String compatibilityValue = android.app.HeckerAppCompatibility.settingOverride(
+                    mUri.getLastPathSegment(), name, userId);
+            if (compatibilityValue != null) return compatibilityValue;
             final boolean isSelf = (userId == UserHandle.myUserId());
             final AttributionSource attributionSource = cr.getAttributionSource();
             final int deviceId = android.permission.flags.Flags.deviceAwarePermissionApisEnabled()

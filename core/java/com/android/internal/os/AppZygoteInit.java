@@ -73,6 +73,8 @@ class AppZygoteInit {
         @Override
         protected void handlePreloadApp(ApplicationInfo appInfo) {
             Log.i(TAG, "Beginning application preload for " + appInfo.packageName);
+            android.app.HeckerAppCompatibility.initialize(appInfo.heckerCompatibilityFlags,
+                    android.os.Process.myUid());
             LoadedApk loadedApk = new LoadedApk(null, appInfo, null, null, false, true, false);
             ClassLoader loader = loadedApk.getClassLoader();
 

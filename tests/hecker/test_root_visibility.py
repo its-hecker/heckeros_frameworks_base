@@ -17,7 +17,7 @@ STUBS = {
 'android/database/ContentObserver.java': 'package android.database; public class ContentObserver { public ContentObserver(android.os.Handler h){} public void onChange(boolean b,android.net.Uri u,int i){} }',
 'android/content/ContentResolver.java': 'package android.content; public class ContentResolver { public android.database.ContentObserver observer; public void registerContentObserver(android.net.Uri u,boolean b,android.database.ContentObserver o,int i){observer=o;} }',
 'android/content/Context.java': 'package android.content; public class Context { public final ContentResolver resolver=new ContentResolver(); public ContentResolver getContentResolver(){return resolver;} public <T>T getSystemService(Class<T> c){return c.cast(new android.os.UserManager());} }',
-'android/provider/Settings.java': 'package android.provider; public class Settings { public static class Secure { public static java.util.Map<Integer,String> values=new java.util.HashMap<>(); public static android.net.Uri getUriFor(String k){return new android.net.Uri();} public static String getStringForUser(android.content.ContentResolver c,String k,int u){return values.get(u);} } }',
+'android/provider/Settings.java': 'package android.provider; public class Settings { public static class Secure { public static java.util.Map<Integer,String> values=new java.util.HashMap<>(); public static java.util.Map<String,java.util.Map<Integer,String>> options=new java.util.HashMap<>(); public static android.net.Uri getUriFor(String k){return new android.net.Uri();} public static String getStringForUser(android.content.ContentResolver c,String k,int u){return k.equals("hecker_root_private_apps")?values.get(u):options.getOrDefault(k,java.util.Collections.emptyMap()).get(u);} } }',
 'android/util/Slog.java': 'package android.util; public class Slog { public static int w(String t,String m){return 0;} }',
 'com/android/server/FgThread.java': 'package com.android.server; public class FgThread { public static android.os.Handler getHandler(){return new android.os.Handler();} }',
 'com/android/server/pm/pkg/PackageStateInternal.java': 'package com.android.server.pm.pkg; public interface PackageStateInternal { int getAppId(); String getPackageName(); }',
@@ -58,6 +58,30 @@ public class RootVisibilityTest {
         Settings.Secure.values.remove(0);
         context.resolver.observer.onChange(false,null,0);
         expect(!HeckerRootVisibility.shouldHide(10101,bank,manager)); // reversible
+        expect(HeckerRootVisibility.getCompatibilityFlags("org.example.bank",0)==0);
+        for (int option=1; option<4; option++) {
+            Settings.Secure.options.put(HeckerRootVisibility.SETTINGS[option],
+                    new java.util.HashMap<>(java.util.Map.of(0,"org.example.bank")));
+            context.resolver.observer.onChange(false,null,0);
+            int expected=(1 << (option+1))-2;
+            expect(HeckerRootVisibility.getCompatibilityFlags("org.example.bank",0)==expected);
+            expect(HeckerRootVisibility.getCompatibilityFlags("org.example.bank.clone",0)==0);
+            expect(HeckerRootVisibility.getCompatibilityFlags("org.example.bank",10)==1);
+        }
+        expect(HeckerRootVisibility.allowDowngrade("org.example.bank",new int[]{0}));
+        expect(!HeckerRootVisibility.allowDowngrade("org.example.bank",new int[]{0,10}));
+        expect(!HeckerRootVisibility.allowDowngrade("org.example.bank",new int[]{}));
+        expect(!HeckerRootVisibility.allowDowngrade("org.example.bank",null));
+        Settings.Secure.options.get(HeckerRootVisibility.SETTINGS[1]).put(10,"org.example.bank");
+        context.resolver.observer.onChange(false,null,10);
+        expect(HeckerRootVisibility.allowDowngrade("org.example.bank",new int[]{0,10}));
+        expect(!HeckerRootVisibility.allowDowngrade("org.example.other",new int[]{0}));
+        Settings.Secure.options.get(HeckerRootVisibility.SETTINGS[2]).put(0,"x".repeat(65537));
+        context.resolver.observer.onChange(false,null,0);
+        expect(HeckerRootVisibility.getCompatibilityFlags("org.example.bank",0)==10);
+        Settings.Secure.options.clear();
+        context.resolver.observer.onChange(false,null,0);
+        expect(HeckerRootVisibility.getCompatibilityFlags("org.example.bank",0)==0);
         expect(HeckerRootVisibility.shouldHide(1010101,bank,manager));
         System.out.println("Production privacy policy: build gate, target matching, users, shared UID, self/system access and reversal PASS");
     }

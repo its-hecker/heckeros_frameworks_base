@@ -7972,6 +7972,8 @@ public final class ActivityThread extends ClientTransactionHandler
     @UnsupportedAppUsage
     @RavenwoodThrow(comment = "See ActivityThread_ravenwood for initialization on Ravenwood")
     private void handleBindApplication(AppBindData data) {
+        HeckerAppCompatibility.initialize(data.appInfo.heckerCompatibilityFlags,
+                Process.myUid());
         mDdmSyncStageUpdater.next(Stage.Bind);
 
         // Register the UI Thread as a sensitive thread to the runtime.

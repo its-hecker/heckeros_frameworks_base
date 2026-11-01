@@ -941,6 +941,12 @@ public class ApplicationInfo extends PackageItemInfo implements Parcelable {
     public @ApplicationInfoPrivateFlagsExt int privateFlagsExt;
 
     /**
+     * Per-user Hecker compatibility flags supplied by PackageManager.
+     * @hide
+     */
+    public int heckerCompatibilityFlags;
+
+    /**
      * @hide
      */
     public static final String METADATA_PRELOADED_FONTS = "preloaded_fonts";
@@ -2146,6 +2152,7 @@ public class ApplicationInfo extends PackageItemInfo implements Parcelable {
         flags = orig.flags;
         privateFlags = orig.privateFlags;
         privateFlagsExt = orig.privateFlagsExt;
+        heckerCompatibilityFlags = orig.heckerCompatibilityFlags;
         requiresSmallestWidthDp = orig.requiresSmallestWidthDp;
         compatibleWidthLimitDp = orig.compatibleWidthLimitDp;
         largestWidthLimitDp = orig.largestWidthLimitDp;
@@ -2244,6 +2251,7 @@ public class ApplicationInfo extends PackageItemInfo implements Parcelable {
         dest.writeInt(flags);
         dest.writeInt(privateFlags);
         dest.writeInt(privateFlagsExt);
+        dest.writeInt(heckerCompatibilityFlags);
         dest.writeInt(requiresSmallestWidthDp);
         dest.writeInt(compatibleWidthLimitDp);
         dest.writeInt(largestWidthLimitDp);
@@ -2375,6 +2383,7 @@ public class ApplicationInfo extends PackageItemInfo implements Parcelable {
         flags = source.readInt();
         privateFlags = source.readInt();
         privateFlagsExt = source.readInt();
+        heckerCompatibilityFlags = source.readInt();
         requiresSmallestWidthDp = source.readInt();
         compatibleWidthLimitDp = source.readInt();
         largestWidthLimitDp = source.readInt();

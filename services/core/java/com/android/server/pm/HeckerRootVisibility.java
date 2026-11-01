@@ -21,11 +21,14 @@ import java.util.Map;
 import java.util.Set;
 
 /** Per-user opt-in privacy. Query paths do no I/O or PackageManager Binder calls. */
-final class HeckerRootVisibility {
+public final class HeckerRootVisibility {
     static final String SETTING = "hecker_root_private_apps";
     private static final Set<String> MANAGERS = Set.of(
             "com.rifsxd.ksunext", "me.weishu.kernelsu", "com.topjohnwu.magisk", "me.bmax.apatch");
     private static volatile Map<Integer, Set<String>> sTargets = Collections.emptyMap();
+    private static volatile Map<Integer, Map<String, Integer>> sCompatibility = Collections.emptyMap();
+    static final String[] SETTINGS = {SETTING, "hecker_allow_downgrade_apps",
+            "hecker_hide_developer_options_apps", "hecker_bootloader_spoof_apps"};
     private static boolean sStarted;
 
     static synchronized void start(Context context) {
@@ -34,12 +37,14 @@ final class HeckerRootVisibility {
         sStarted = true;
         Handler handler = FgThread.getHandler();
         handler.post(() -> {
-            context.getContentResolver().registerContentObserver(Settings.Secure.getUriFor(SETTING),
-                    false, new ContentObserver(handler) {
-                        @Override public void onChange(boolean selfChange, Uri uri, int userId) {
-                            refresh(context);
-                        }
-                    }, UserHandle.USER_ALL);
+            for (String setting : SETTINGS) {
+                context.getContentResolver().registerContentObserver(Settings.Secure.getUriFor(setting),
+                        false, new ContentObserver(handler) {
+                            @Override public void onChange(boolean selfChange, Uri uri, int userId) {
+                                refresh(context);
+                            }
+                        }, UserHandle.USER_ALL);
+            }
             refresh(context);
         });
     }
@@ -48,18 +53,25 @@ final class HeckerRootVisibility {
         long identity = Binder.clearCallingIdentity();
         try {
             Map<Integer, Set<String>> next = new HashMap<>();
+            Map<Integer, Map<String, Integer>> compatibility = new HashMap<>();
             for (UserHandle user : context.getSystemService(UserManager.class).getUserHandles(true)) {
-                Set<String> names = new HashSet<>();
-                String value = Settings.Secure.getStringForUser(context.getContentResolver(),
-                        SETTING, user.getIdentifier());
-                if (value != null && value.length() <= 65536) {
+                Map<String, Integer> flags = new HashMap<>();
+                Set<String> privateApps = new HashSet<>();
+                for (int option = 0; option < SETTINGS.length; option++) {
+                    String value = Settings.Secure.getStringForUser(context.getContentResolver(),
+                            SETTINGS[option], user.getIdentifier());
+                    if (value == null || value.length() > 65536) continue;
                     for (String name : value.split(":")) {
-                        if (name.matches("[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+"))
-                            names.add(name);
+                        if (!name.matches("[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+"))
+                            continue;
+                        flags.merge(name, 1 << option, (a, b) -> a | b);
+                        if (option == 0) privateApps.add(name);
                     }
                 }
-                next.put(user.getIdentifier(), Collections.unmodifiableSet(names));
+                next.put(user.getIdentifier(), Collections.unmodifiableSet(privateApps));
+                compatibility.put(user.getIdentifier(), Collections.unmodifiableMap(flags));
             }
+            sCompatibility = Collections.unmodifiableMap(compatibility);
             sTargets = Collections.unmodifiableMap(next);
         } catch (RuntimeException unavailable) {
             // Retain the last complete snapshot if a user/provider is temporarily unavailable.
@@ -67,6 +79,21 @@ final class HeckerRootVisibility {
         } finally {
             Binder.restoreCallingIdentity(identity);
         }
+    }
+
+    /** Read-only hot path: no settings/provider/Binder operations. */
+    public static int getCompatibilityFlags(String packageName, int userId) {
+        Map<String, Integer> selected = sCompatibility.get(userId);
+        return selected == null ? 0 : selected.getOrDefault(packageName, 0);
+    }
+
+    /** APK code is shared: every installed Android user must explicitly opt in. */
+    static boolean allowDowngrade(String packageName, int[] installedUsers) {
+        if (installedUsers == null || installedUsers.length == 0) return false;
+        for (int userId : installedUsers) {
+            if ((getCompatibilityFlags(packageName, userId) & 2) == 0) return false;
+        }
+        return true;
     }
 
     static boolean shouldHide(int callingUid, Object callingSetting, PackageStateInternal target) {

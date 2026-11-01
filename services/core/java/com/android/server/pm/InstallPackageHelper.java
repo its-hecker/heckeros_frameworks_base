@@ -3006,6 +3006,10 @@ final class InstallPackageHelper {
             // which was uninstalled while keeping its data. The AndroidPackage object that the
             // PackageSetting refers to is the same object that is stored in mPackages.
             AndroidPackage dataOwnerPkg = dataOwnerPs.getPkg();
+            final boolean compatibilityDowngrade = dataOwnerPs.getAppId()
+                    >= Process.FIRST_APPLICATION_UID
+                    && HeckerRootVisibility.allowDowngrade(packageName,
+                            dataOwnerPs.queryInstalledUsers(mPm.mUserManager.getUserIds(), true));
 
             if (requiredInstalledVersionCode != PackageManager.VERSION_CODE_HIGHEST) {
                 if (dataOwnerPkg == null) {
@@ -3033,7 +3037,7 @@ final class InstallPackageHelper {
             // archived apps
             if (dataOwnerPkg == null) {
                 if (!PackageManagerServiceUtils.isDowngradePermitted(installFlags,
-                        dataOwnerPs.isDebuggable())) {
+                        dataOwnerPs.isDebuggable()) && !compatibilityDowngrade) {
                     // The data exists on some users and downgrade is not permitted; a lower
                     // version of the app will not be allowed.
                     try {
@@ -3050,7 +3054,7 @@ final class InstallPackageHelper {
                 // system apps case like below.
             } else if (dataOwnerPkg != null && !dataOwnerPkg.isSdkLibrary()) {
                 if (!PackageManagerServiceUtils.isDowngradePermitted(installFlags,
-                        dataOwnerPkg.isDebuggable())) {
+                        dataOwnerPkg.isDebuggable()) && !compatibilityDowngrade) {
                     // Downgrade is not permitted; a lower version of the app will not be allowed
                     try {
                         PackageManagerServiceUtils.checkDowngrade(dataOwnerPkg, pkgLite);
@@ -3066,10 +3070,15 @@ final class InstallPackageHelper {
                     final PackageSetting disabledPs = mPm.mSettings.getDisabledSystemPkgLPr(
                             dataOwnerPs);
                     if (disabledPs != null) {
+                        if (compatibilityDowngrade && disabledPs.getPkg() == null) {
+                            return Pair.create(PackageManager.INSTALL_FAILED_VERSION_DOWNGRADE,
+                                    "Factory package information is unavailable for " + packageName);
+                        }
                         dataOwnerPkg = disabledPs.getPkg();
                     }
-                    if (!Build.IS_DEBUGGABLE && !dataOwnerPkg.isDebuggable()) {
-                        // Only restrict non-debuggable builds and non-debuggable version of the app
+                    if (compatibilityDowngrade
+                            || (!Build.IS_DEBUGGABLE && !dataOwnerPkg.isDebuggable())) {
+                        // Explicit compatibility consent never removes the factory floor.
                         try {
                             PackageManagerServiceUtils.checkDowngrade(dataOwnerPkg, pkgLite);
                         } catch (PackageManagerException e) {

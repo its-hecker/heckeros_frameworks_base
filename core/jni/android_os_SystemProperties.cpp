@@ -786,6 +786,19 @@ jboolean PlayIntegritySpoofService_nativeSpoofProperties(
     return JNI_FALSE;
 #endif
 }
+jboolean HeckerAppCompatibility_nativeApplyBootProperties(JNIEnv*, jclass) {
+#if defined(__BIONIC__)
+    // This entry point only ever modifies the calling app's private mappings.
+    if (getuid() % 100000 < 10000) return JNI_FALSE;
+    pif_prop_virt::State state;
+    state.exactMap = {{"ro.boot.verifiedbootstate", "green"},
+                     {"ro.boot.flash.locked", "1"},
+                     {"ro.boot.vbmeta.device_state", "locked"}};
+    return pif_prop_virt::install(state) ? JNI_TRUE : JNI_FALSE;
+#else
+    return JNI_FALSE;
+#endif
+}
 }  // namespace
 
 int register_android_os_SystemProperties(JNIEnv *env)
@@ -833,6 +846,12 @@ int register_android_os_SystemProperties(JNIEnv *env)
     } else {
         env->ExceptionClear();
     }
+    const JNINativeMethod compatibility_methods[] = {
+        { "nativeApplyBootProperties", "()Z",
+          (void*) HeckerAppCompatibility_nativeApplyBootProperties },
+    };
+    RegisterMethodsOrDie(env, "android/app/HeckerAppCompatibility",
+                        compatibility_methods, NELEM(compatibility_methods));
     return res;
 }
 

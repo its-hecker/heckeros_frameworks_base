@@ -455,6 +455,9 @@ public class PackageInfoUtils {
         if (ai.category == ApplicationInfo.CATEGORY_UNDEFINED) {
             ai.category = FallbackCategoryProvider.getFallbackCategory(ai.packageName);
         }
+        ai.heckerCompatibilityFlags =
+                com.android.server.pm.HeckerRootVisibility.getCompatibilityFlags(
+                        ai.packageName, userId);
         ai.seInfoUser = SELinuxUtil.getSeinfoUser(state);
         final OverlayPaths overlayPaths = state.getAllOverlayPaths();
         if (overlayPaths != null) {

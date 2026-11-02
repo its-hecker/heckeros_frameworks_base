@@ -19,9 +19,14 @@ import android.os.Process;
 import android.os.SystemProperties;
 import android.provider.Settings;
 import android.util.Slog;
+import com.android.server.pm.pkg.PackageStateInternal;
+import com.android.server.pm.pkg.SharedUserApi;
 import java.util.*;
 public class AppCompatibilityTest {
     static int assertions;
+    record VisiblePkg(String name, int appId) implements PackageStateInternal {
+        public String getPackageName(){return name;} public int getAppId(){return appId;}
+    }
     static void check(boolean value) { assertions++; if(!value) throw new AssertionError("assertion "+assertions); }
     static class Pair<A,B> { final A first; final B second; Pair(A a,B b){first=a;second=b;} static <A,B> Pair<A,B> create(A a,B b){return new Pair<>(a,b);} }
     static class PackageManager { static final int INSTALL_APEX=2, VERSION_CODE_HIGHEST=-1, INSTALL_SUCCEEDED=1, INSTALL_FAILED_WRONG_INSTALLED_VERSION=-2, INSTALL_FAILED_VERSION_DOWNGRADE=-3; }
@@ -70,7 +75,27 @@ public class AppCompatibilityTest {
         check(install.verifyReplacingVersionCode(next,-1,0).first==1); // retained data, explicit consent
         configure(context,0,"hecker_allow_downgrade_apps","");
         check(install.verifyReplacingVersionCode(next,-1,0).first==-3);
-        for(int flags=0;flags<16;flags++) for(int user:new int[]{0,10}) {
+        configure(context,0,"hecker_hide_custom_rom_apps","org.example.app:org.hecker.suite:com.android.systemui");
+        check((HeckerRootVisibility.getCompatibilityFlags("org.example.app",0)&16)!=0);
+        check((HeckerRootVisibility.getCompatibilityFlags("org.example.app",10)&16)==0);
+        check((HeckerRootVisibility.getCompatibilityFlags("org.hecker.suite",0)&16)==0);
+        check((HeckerRootVisibility.getCompatibilityFlags("com.android.systemui",0)&16)==0);
+        VisiblePkg caller=new VisiblePkg("org.example.app",10101), suite=new VisiblePkg("org.hecker.suite",10666);
+        check(HeckerRootVisibility.shouldHide(10101,caller,suite));
+        check(!HeckerRootVisibility.shouldHide(1010101,caller,suite));
+        check(!HeckerRootVisibility.shouldHide(1000,caller,suite));
+        check(!HeckerRootVisibility.shouldHide(10666,caller,suite));
+        check(!HeckerRootVisibility.shouldHide(10101,caller,new VisiblePkg("org.example.normal",10555)));
+        SharedUserApi shared=()->Set.of(caller,new VisiblePkg("org.example.shared",10101));
+        check(HeckerRootVisibility.shouldHide(10101,shared,suite));
+        configure(context,0,"hecker_hide_custom_rom_apps","");
+        check(!HeckerRootVisibility.shouldHide(10101,caller,suite));
+        check(HeckerAppCompatibility.ALL_FLAGS==31);
+        HeckerAppCompatibility.initialize(16,10101);
+        check(android.os.Build.TYPE.equals("user") && android.os.Build.TAGS.equals("release-keys"));
+        HeckerAppCompatibility.initialize(0,10101);
+        check(android.os.Build.TYPE.equals("userdebug") && android.os.Build.TAGS.equals("test-keys"));
+        for(int flags=0;flags<32;flags++) for(int user:new int[]{0,10}) {
             HeckerAppCompatibility.initialize(flags,user*100000+10101);
             for(String table:new String[]{"global","secure","system","config"}) {
                 for(String key:new String[]{"development_settings_enabled","adb_enabled","adb_wifi_enabled","screen_brightness","hecker_allow_downgrade_apps"}) {
@@ -98,6 +123,7 @@ def main():
         stubs=dict(privacy.STUBS)
         stubs['android/util/Slog.java']='package android.util; public class Slog {public static int w(String t,String m){return 0;}}'
         stubs['android/util/Log.java']='package android.util; public class Log {public static int w(String t,String m){return 0;} public static int w(String t,String m,Throwable x){return 0;}}'
+        stubs['android/os/Build.java']='package android.os; public class Build {public static String TYPE="userdebug", TAGS="test-keys";}'
         for path,content in stubs.items():
             p=out/path;p.parent.mkdir(parents=True,exist_ok=True);p.write_text(content)
         test=out/'com/android/server/pm/AppCompatibilityTest.java'
@@ -110,7 +136,7 @@ def main():
         cpp=(ROOT/'core/jni/android_os_SystemProperties.cpp').read_text()
         a=cpp.index('jboolean HeckerAppCompatibility_nativeApplyBootProperties(')
         b=cpp.index('\n}  // namespace',a)
-        native='''#include <map>\n#include <string>\n#include <cassert>\nusing jboolean=bool;struct JNIEnv{};using jclass=void*;constexpr bool JNI_FALSE=false,JNI_TRUE=true;static unsigned testUid;static int applied;\n#define __BIONIC__ 1\n#define getuid() testUid\nnamespace pif_prop_virt {struct State{std::map<std::string,std::string> exactMap;}; bool install(State&s){applied++;assert(s.exactMap.size()==3);assert(s.exactMap.at("ro.boot.flash.locked")=="1");assert(s.exactMap.at("ro.boot.verifiedbootstate")=="green");assert(s.exactMap.at("ro.boot.vbmeta.device_state")=="locked");return true;}}\n'''+cpp[a:b]+'''\nint main(){for(auto uid:{0u,1000u,2000u,1001000u}){testUid=uid;assert(!HeckerAppCompatibility_nativeApplyBootProperties(nullptr,nullptr));}assert(applied==0);for(auto uid:{10101u,90000u,1010101u}){testUid=uid;assert(HeckerAppCompatibility_nativeApplyBootProperties(nullptr,nullptr));}assert(applied==3);}\n'''
+        native='''#include <map>\n#include <string>\n#include <cassert>\nusing jboolean=bool;struct JNIEnv{};using jclass=void*;constexpr bool JNI_FALSE=false,JNI_TRUE=true;static unsigned testUid;static int applied;static int romCalls;static bool romEnabled;static bool rom_set(bool enabled){romCalls++;romEnabled=enabled;return true;}static bool (*__libc_hecker_set_rom_hide)(bool)=nullptr;\n#define __BIONIC__ 1\n#define getuid() testUid\nnamespace pif_prop_virt {struct State{std::map<std::string,std::string> exactMap;}; bool install(State&s){applied++;assert(s.exactMap.size()==3);assert(s.exactMap.at("ro.boot.flash.locked")=="1");assert(s.exactMap.at("ro.boot.verifiedbootstate")=="green");assert(s.exactMap.at("ro.boot.vbmeta.device_state")=="locked");return true;}}\n'''+cpp[a:b]+'''\nint main(){for(auto uid:{0u,1000u,2000u,1001000u}){testUid=uid;assert(!HeckerAppCompatibility_nativeApplyBootProperties(nullptr,nullptr));}assert(applied==0);for(auto uid:{10101u,90000u,1010101u}){testUid=uid;assert(HeckerAppCompatibility_nativeApplyBootProperties(nullptr,nullptr));}assert(applied==3);__libc_hecker_set_rom_hide=rom_set;testUid=1000;assert(!HeckerAppCompatibility_nativeConfigureRomHide(nullptr,nullptr,true));assert(romCalls==0);testUid=10101;assert(HeckerAppCompatibility_nativeConfigureRomHide(nullptr,nullptr,true));assert(romEnabled);assert(HeckerAppCompatibility_nativeConfigureRomHide(nullptr,nullptr,false));assert(!romEnabled&&romCalls==2);__libc_hecker_set_rom_hide=nullptr;assert(!HeckerAppCompatibility_nativeConfigureRomHide(nullptr,nullptr,true));}\n'''
         (out/'native.cpp').write_text(native)
         subprocess.run(['g++','-std=c++20','-Wall','-Wextra','-Werror',str(out/'native.cpp'),'-o',str(out/'native')],check=True)
         subprocess.run([str(out/'native')],check=True)

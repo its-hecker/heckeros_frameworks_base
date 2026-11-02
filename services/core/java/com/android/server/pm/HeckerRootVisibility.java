@@ -25,10 +25,14 @@ public final class HeckerRootVisibility {
     static final String SETTING = "hecker_root_private_apps";
     private static final Set<String> MANAGERS = Set.of(
             "com.rifsxd.ksunext", "me.weishu.kernelsu", "com.topjohnwu.magisk", "me.bmax.apatch");
+    private static final Set<String> ROM_COMPONENTS = Set.of("org.hecker.suite", "org.hecker.netlab");
+    private static final Set<String> ROM_PROTECTED = Set.of("android", "com.android.systemui",
+            "com.android.settings", "com.android.permissioncontroller", "org.hecker.suite");
     private static volatile Map<Integer, Set<String>> sTargets = Collections.emptyMap();
     private static volatile Map<Integer, Map<String, Integer>> sCompatibility = Collections.emptyMap();
     static final String[] SETTINGS = {SETTING, "hecker_allow_downgrade_apps",
-            "hecker_hide_developer_options_apps", "hecker_bootloader_spoof_apps"};
+            "hecker_hide_developer_options_apps", "hecker_bootloader_spoof_apps",
+            "hecker_hide_custom_rom_apps"};
     private static boolean sStarted;
 
     static synchronized void start(Context context) {
@@ -83,8 +87,10 @@ public final class HeckerRootVisibility {
 
     /** Read-only hot path: no settings/provider/Binder operations. */
     public static int getCompatibilityFlags(String packageName, int userId) {
+        if (packageName == null) return 0;
         Map<String, Integer> selected = sCompatibility.get(userId);
-        return selected == null ? 0 : selected.getOrDefault(packageName, 0);
+        int flags = selected == null ? 0 : selected.getOrDefault(packageName, 0);
+        return ROM_PROTECTED.contains(packageName) ? flags & ~16 : flags;
     }
 
     /** APK code is shared: every installed Android user must explicitly opt in. */
@@ -99,16 +105,22 @@ public final class HeckerRootVisibility {
     static boolean shouldHide(int callingUid, Object callingSetting, PackageStateInternal target) {
         int appId = UserHandle.getAppId(callingUid);
         if (appId < Process.FIRST_APPLICATION_UID || target == null
-                || appId == target.getAppId() || !MANAGERS.contains(target.getPackageName()))
+                || appId == target.getAppId())
             return false;
+        boolean manager = MANAGERS.contains(target.getPackageName());
+        boolean romComponent = ROM_COMPONENTS.contains(target.getPackageName());
+        if (!manager && !romComponent) return false;
         Set<String> selected = sTargets.get(UserHandle.getUserId(callingUid));
-        if (selected == null || selected.isEmpty()) return false;
         if (callingSetting instanceof PackageStateInternal) {
-            return selected.contains(((PackageStateInternal) callingSetting).getPackageName());
+            String name = ((PackageStateInternal) callingSetting).getPackageName();
+            return manager && selected != null && selected.contains(name)
+                    || romComponent && (getCompatibilityFlags(name, UserHandle.getUserId(callingUid)) & 16) != 0;
         }
         if (callingSetting instanceof SharedUserApi) {
             for (PackageStateInternal pkg : ((SharedUserApi) callingSetting).getPackageStates()) {
-                if (selected.contains(pkg.getPackageName())) return true;
+                if (manager && selected != null && selected.contains(pkg.getPackageName())
+                        || romComponent && (getCompatibilityFlags(pkg.getPackageName(),
+                                UserHandle.getUserId(callingUid)) & 16) != 0) return true;
             }
         }
         return false;

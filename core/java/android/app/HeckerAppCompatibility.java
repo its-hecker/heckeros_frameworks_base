@@ -2,6 +2,7 @@
 package android.app;
 
 import android.os.Process;
+import android.os.Build;
 import android.util.Log;
 
 /**
@@ -13,10 +14,14 @@ public final class HeckerAppCompatibility {
     public static final int ALLOW_DOWNGRADE = 2;
     public static final int HIDE_DEVELOPER_OPTIONS = 4;
     public static final int SPOOF_BOOTLOADER = 8;
-    public static final int ALL_FLAGS = 15;
+    public static final int HIDE_CUSTOM_ROM = 16;
+    public static final int ALL_FLAGS = 31;
     private static volatile int sFlags;
     private static volatile int sUserId = -1;
     private static boolean sBootPropertiesApplied;
+    private static final String REAL_BUILD_TYPE = Build.TYPE;
+    private static final String REAL_BUILD_TAGS = Build.TAGS;
+    private static boolean sBuildFieldsCustomized;
 
     private HeckerAppCompatibility() {}
 
@@ -30,6 +35,28 @@ public final class HeckerAppCompatibility {
         }
         sUserId = uid / 100000;
         sFlags = flags & ALL_FLAGS;
+        boolean hideRom = (sFlags & HIDE_CUSTOM_ROM) != 0;
+        if (hideRom != sBuildFieldsCustomized) {
+            try {
+                // Build was initialized in zygote before the native per-app policy existed.
+                // Match the two software build fields without replacing device identity or SDK.
+                java.lang.reflect.Field type = Build.class.getDeclaredField("TYPE");
+                java.lang.reflect.Field tags = Build.class.getDeclaredField("TAGS");
+                type.setAccessible(true); tags.setAccessible(true);
+                type.set(null, hideRom ? "user" : REAL_BUILD_TYPE);
+                tags.set(null, hideRom ? "release-keys" : REAL_BUILD_TAGS);
+                sBuildFieldsCustomized = hideRom;
+            } catch (ReflectiveOperationException | RuntimeException unavailable) {
+                Log.w("HeckerAppCompatibility", "Software build fields unavailable", unavailable);
+            }
+        }
+        try {
+            // Also clear an app-zygote child's inherited native flag when its profile is off.
+            if (!nativeConfigureRomHide(hideRom) && hideRom) Log.w("HeckerAppCompatibility",
+                    "Native ROM compatibility is unavailable in this image");
+        } catch (LinkageError | RuntimeException unavailable) {
+            if (hideRom) Log.w("HeckerAppCompatibility", "ROM compatibility unavailable", unavailable);
+        }
         // A child of an app zygote inherits its already-private property mappings.
         if ((sFlags & SPOOF_BOOTLOADER) != 0 && !sBootPropertiesApplied) {
             try {
@@ -52,4 +79,5 @@ public final class HeckerAppCompatibility {
     }
 
     private static native boolean nativeApplyBootProperties();
+    private static native boolean nativeConfigureRomHide(boolean enabled);
 }

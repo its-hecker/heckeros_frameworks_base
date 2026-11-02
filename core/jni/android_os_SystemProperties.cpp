@@ -52,6 +52,7 @@
 #include <unistd.h>
 #include <unordered_map>
 #include <vector>
+extern "C" bool __libc_hecker_set_rom_hide(bool enabled) __attribute__((weak));
 #endif
 
 namespace android {
@@ -799,6 +800,15 @@ jboolean HeckerAppCompatibility_nativeApplyBootProperties(JNIEnv*, jclass) {
     return JNI_FALSE;
 #endif
 }
+jboolean HeckerAppCompatibility_nativeConfigureRomHide(JNIEnv*, jclass, jboolean enabled) {
+#if defined(__BIONIC__)
+    if (getuid() % 100000 < 10000 || __libc_hecker_set_rom_hide == nullptr) return JNI_FALSE;
+    return __libc_hecker_set_rom_hide(enabled == JNI_TRUE) ? JNI_TRUE : JNI_FALSE;
+#else
+    (void)enabled;
+    return JNI_FALSE;
+#endif
+}
 }  // namespace
 
 int register_android_os_SystemProperties(JNIEnv *env)
@@ -847,6 +857,8 @@ int register_android_os_SystemProperties(JNIEnv *env)
         env->ExceptionClear();
     }
     const JNINativeMethod compatibility_methods[] = {
+        { "nativeConfigureRomHide", "(Z)Z",
+          (void*) HeckerAppCompatibility_nativeConfigureRomHide },
         { "nativeApplyBootProperties", "()Z",
           (void*) HeckerAppCompatibility_nativeApplyBootProperties },
     };

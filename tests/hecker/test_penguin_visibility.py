@@ -81,6 +81,8 @@ public class PenguinVisibilityTest {
   check(!AppsFilterBase.shouldHideFromUid(snapshot,10666,"org.hecker.suite"));
   check(!AppsFilterBase.shouldHideFromUid(snapshot,10101,"app.normal"));
   check(!AppsFilterBase.shouldHideFromUid(snapshot,10101,null));
+  check(AppsFilterBase.shouldHideFromUid(snapshot,10199,"org.hecker.suite"));
+  check(!AppsFilterBase.shouldHideFromUid(snapshot,10199,"com.rifsxd.ksunext"));
   check(!AppsFilterBase.shouldHideFromUid(snapshot,10101,"com.rifsxd.ksunext"));
   Settings.Secure.values.put(0,"app.bank");context.resolver.observer.onChange(false,null,0);
   check(AppsFilterBase.shouldHideFromUid(snapshot,10101,"com.rifsxd.ksunext"));

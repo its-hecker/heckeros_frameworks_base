@@ -186,6 +186,8 @@ public final class HeckerRootVisibility {
                                 UserHandle.getUserId(callingUid)) & 16) != 0) return true;
             }
         }
-        return false;
+        // Unresolved application/SDK callers have no trusted-package allowance.
+        // Root-manager selection still requires a known per-user package.
+        return romComponent;
     }
 }

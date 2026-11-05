@@ -8214,10 +8214,11 @@ public final class ActivityThread extends ClientTransactionHandler
         NetworkSecurityConfigProvider.install(appContext);
         Trace.traceEnd(Trace.TRACE_TAG_ACTIVITY_MANAGER);
 
-        // HeckerOS: package-scoped Axion game profiles, before application loading.
+        // PenguinOS/celerity: apply selected per-app profiles before application code.
+        // Retain HeckerOS' isolated-process exclusion.
         if (!Process.isIsolated()) {
             android.security.gameprops.GamePropsSpoofService.getInstance()
-                    .spoofForPackage(data.appInfo.packageName);
+                    .spoofForPackage(data.appInfo.packageName, appContext);
         }
 
         // HeckerOS: PIF is confined to the attestation and Play Store processes.

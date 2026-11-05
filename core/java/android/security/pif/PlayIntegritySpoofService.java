@@ -38,6 +38,44 @@ public final class PlayIntegritySpoofService {
     private static final String VENDING_PACKAGE = "com.android.vending";
     private static final String GMS_PACKAGE = "com.google.android.gms";
 
+    // PenguinOS-style Photos compatibility without the obsolete PropImitationHooks.
+    // Uses the existing HeckerOS property writer, but never runs in non-Photos apps.
+    private static final String PHOTOS_PACKAGE = "com.google.android.apps.photos";
+    private static final Set<String> PHOTOS_OLDER_FEATURES = Set.of(
+            "PIXEL_2017_EXPERIENCE", "PIXEL_2017_PRELOAD",
+            "PIXEL_2018_EXPERIENCE", "PIXEL_2018_PRELOAD",
+            "PIXEL_2019_EXPERIENCE", "PIXEL_2019_MIDYEAR_EXPERIENCE",
+            "PIXEL_2019_MIDYEAR_PRELOAD", "PIXEL_2019_PRELOAD",
+            "PIXEL_2020_EXPERIENCE", "PIXEL_2020_MIDYEAR_EXPERIENCE",
+            "PIXEL_2021_MIDYEAR_EXPERIENCE");
+    private static final Set<String> PHOTOS_TENSOR_FEATURES = Set.of(
+            "PIXEL_2021_EXPERIENCE", "PIXEL_2022_EXPERIENCE",
+            "PIXEL_2022_MIDYEAR_EXPERIENCE", "PIXEL_2023_EXPERIENCE",
+            "PIXEL_2023_MIDYEAR_EXPERIENCE", "PIXEL_2024_EXPERIENCE",
+            "PIXEL_2024_MIDYEAR_EXPERIENCE", "PIXEL_2025_EXPERIENCE",
+            "PIXEL_2025_MIDYEAR_EXPERIENCE");
+    public static boolean isPhotosPackage(String packageName) {
+        return PHOTOS_PACKAGE.equals(packageName);
+    }
+    public static boolean photosHasSystemFeature(String feature, boolean original) {
+        if (!isPhotosPackage(ActivityThread.currentPackageName()) || feature == null) return original;
+        if (original && (PHOTOS_OLDER_FEATURES.stream().anyMatch(feature::contains)
+                || PHOTOS_TENSOR_FEATURES.stream().anyMatch(feature::contains))) return false;
+        if (!original && "com.google.android.apps.photos.NEXUS_PRELOAD".equalsIgnoreCase(feature))
+            return true;
+        return original;
+    }
+    public void spoofPhotosProps() {
+        if (!isPhotosPackage(ActivityThread.currentPackageName())) return;
+        Map.of("PRODUCT", "sailfish", "DEVICE", "sailfish",
+                "MANUFACTURER", "Google", "BRAND", "google",
+                "MODEL", "Pixel",
+                "FINGERPRINT", "google/sailfish/sailfish:10/QP1A.191005.007.A3/5972272:user/release-keys")
+                .forEach((field, value) -> spoofField(field, value, "Photos"));
+    }
+
+
+
     private static final String ROM_SIGNATURE_DATA = "MIIFyTCCA7GgAwIBAgIVALyxxl+zDS9SL68SzOr48309eAZyMA0GCSqGSIb3DQEBCwUAMHQxCzAJ" +
             "BgNVBAYTAlVTMRMwEQYDVQQIEwpDYWxpZm9ybmlhMRYwFAYDVQQHEw1Nb3VudGFpbiBWaWV3MRQw" +
             "EgYDVQQKEwtHb29nbGUgSW5jLjEQMA4GA1UECxMHQW5kcm9pZDEQMA4GA1UEAxMHQW5kcm9pZDAg" +

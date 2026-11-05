@@ -8221,6 +8221,12 @@ public final class ActivityThread extends ClientTransactionHandler
                     .spoofForPackage(data.appInfo.packageName, appContext);
         }
 
+        // Preserve Photos-only compatibility after removing the old imitation hooks.
+        if (!Process.isIsolated() && android.security.pif.PlayIntegritySpoofService
+                .isPhotosPackage(data.appInfo.packageName)) {
+            android.security.pif.PlayIntegritySpoofService.getInstance().spoofPhotosProps();
+        }
+
         // HeckerOS: PIF is confined to the attestation and Play Store processes.
         // The profile is public metadata. Only privileged Settings can write Global.
         if (android.security.pif.PlayIntegritySpoofService.isTargetProcess(data.processName)) {

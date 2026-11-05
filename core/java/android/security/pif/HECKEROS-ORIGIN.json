@@ -32,5 +32,17 @@
     "repository": "AxionAOSP/android_frameworks_base",
     "source_revision": "2017624b588861735445868ca809260bf2499f58",
     "latest_pif_commit": "a04d222e97d60c03e28479adf1cf39dd5002827a"
+  },
+  "penguin": {
+    "repository": "Project-PenguinOS/frameworks_base",
+    "branch": "celerity",
+    "revision": "947644f88d63b82179deec4d9149a1e4332584a3",
+    "adaptations": [
+      "Merged PIF parser handling, explicit initial-API priority, retry policy and Photos/feature catalogs while retaining Hecker Global storage and numeric vending options.",
+      "Keep the established JNI property bridge and per-process keystore hook rather than installing a second AndroidKeyStore provider.",
+      "Import consolidated GameProps and atomic TrickyStore snapshots; preserve system-only keybox imports and last valid policy on Binder transport failure.",
+      "Merge root/ROM package catalogs and trusted system/shared-user/default-launcher exceptions with the existing independent per-user root-manager switch.",
+      "Remove PropImitationHooks and its callers; native task permission checks are unconditional."
+    ]
   }
 }

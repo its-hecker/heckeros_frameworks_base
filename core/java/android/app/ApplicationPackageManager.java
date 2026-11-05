@@ -841,6 +841,9 @@ public class ApplicationPackageManager extends PackageManager {
     @Override
     @RavenwoodRedirect
     public boolean hasSystemFeature(String name, int version) {
+        Boolean compatibility = android.security.pif.PlayIntegritySpoofService.getInstance()
+                .hasSystemFeature(name, version);
+        if (compatibility != null) return compatibility;
         // We check for system features in the following order:
         //    * Build time-defined system features (constant, very efficient)
         //    * SDK-defined system features (cached at process start, very efficient)
@@ -858,8 +861,7 @@ public class ApplicationPackageManager extends PackageManager {
                 return maybeHasSystemFeature;
             }
         }
-        return android.security.pif.PlayIntegritySpoofService.photosHasSystemFeature(name,
-                mHasSystemFeatureCache.query(new HasSystemFeatureQuery(name, version)));
+        return mHasSystemFeatureCache.query(new HasSystemFeatureQuery(name, version));
     }
 
     /** @hide */

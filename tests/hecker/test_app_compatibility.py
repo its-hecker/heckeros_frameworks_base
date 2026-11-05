@@ -77,19 +77,19 @@ public class AppCompatibilityTest {
         check(install.verifyReplacingVersionCode(next,-1,0).first==-3);
         configure(context,0,"hecker_hide_custom_rom_apps","org.example.app:org.hecker.suite:com.android.systemui");
         check((HeckerRootVisibility.getCompatibilityFlags("org.example.app",0)&16)!=0);
-        check((HeckerRootVisibility.getCompatibilityFlags("org.example.app",10)&16)==0);
+        check((HeckerRootVisibility.getCompatibilityFlags("org.example.app",10)&16)!=0);
         check((HeckerRootVisibility.getCompatibilityFlags("org.hecker.suite",0)&16)==0);
         check((HeckerRootVisibility.getCompatibilityFlags("com.android.systemui",0)&16)==0);
         VisiblePkg caller=new VisiblePkg("org.example.app",10101), suite=new VisiblePkg("org.hecker.suite",10666);
         check(HeckerRootVisibility.shouldHide(10101,caller,suite));
-        check(!HeckerRootVisibility.shouldHide(1010101,caller,suite));
+        check(HeckerRootVisibility.shouldHide(1010101,caller,suite));
         check(!HeckerRootVisibility.shouldHide(1000,caller,suite));
         check(!HeckerRootVisibility.shouldHide(10666,caller,suite));
         check(!HeckerRootVisibility.shouldHide(10101,caller,new VisiblePkg("org.example.normal",10555)));
         SharedUserApi shared=()->Set.of(caller,new VisiblePkg("org.example.shared",10101));
         check(HeckerRootVisibility.shouldHide(10101,shared,suite));
         configure(context,0,"hecker_hide_custom_rom_apps","");
-        check(!HeckerRootVisibility.shouldHide(10101,caller,suite));
+        check(HeckerRootVisibility.shouldHide(10101,caller,suite)); // retired setting cannot disable device-wide policy
         check(HeckerAppCompatibility.ALL_FLAGS==31);
         HeckerAppCompatibility.initialize(16,10101);
         check(android.os.Build.TYPE.equals("user") && android.os.Build.TAGS.equals("release-keys"));

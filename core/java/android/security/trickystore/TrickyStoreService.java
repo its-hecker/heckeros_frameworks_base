@@ -25,6 +25,7 @@ package android.security.trickystore;
 import android.app.ActivityManager;
 import android.app.IActivityManager;
 import android.os.RemoteException;
+import android.os.Process;
 import android.os.SystemClock;
 import android.security.keystore.KeyGenParameterSpec;
 import android.security.keystore.KeyProperties;
@@ -161,6 +162,26 @@ public class TrickyStoreService {
     private volatile String mLastKeyboxFingerprint = null;
 
     private final KeyBoxManager mKeyBoxManager;
+    private volatile int mConfigurationUid = Process.myUid();
+
+    /** A child process must not inherit another UID's cached targets or key material. */
+    private void ensureProcessConfiguration() {
+        int uid = Process.myUid();
+        if (mConfigurationUid == uid) return;
+        synchronized (this) {
+            if (mConfigurationUid == uid) return;
+            mPackageModes = Collections.emptyMap();
+            mPatchConfig = new PatchConfig(null, Collections.emptyMap());
+            mKeyBoxManager.clear();
+            mLastKeyboxFingerprint = null;
+            mLastTargetsRefreshMs = 0L;
+            mLastKeyboxRefreshElapsedMs = 0L;
+            mLastPatchRefreshElapsedMs = 0L;
+            mTeeBroken = null;
+            mTeeCheckedAtMs = 0L;
+            mConfigurationUid = uid;
+        }
+    }
 
     /** @hide */
     public enum Mode {
@@ -220,6 +241,7 @@ public class TrickyStoreService {
     }
 
     public synchronized void refreshTargets() {
+        ensureProcessConfiguration();
         FetchResult fetched = fetchFromAms(am -> am.getSpoofTrickyStoreTarget());
         if (!fetched.success) return;
         if (fetched.value == null || fetched.value.trim().isEmpty()) {
@@ -295,6 +317,7 @@ public class TrickyStoreService {
     }
 
     public void refreshKeyBox() {
+        ensureProcessConfiguration();
         synchronized (mKeyboxRefreshLock) {
             mLastKeyboxRefreshElapsedMs = SystemClock.elapsedRealtime();
             refreshKeyBoxLocked();
@@ -385,6 +408,7 @@ public class TrickyStoreService {
     }
 
     public void refreshPatchLevel() {
+        ensureProcessConfiguration();
         synchronized (mPatchRefreshLock) {
             mLastPatchRefreshElapsedMs = SystemClock.elapsedRealtime();
             refreshPatchLevelLocked();
@@ -768,6 +792,7 @@ public class TrickyStoreService {
     }
 
     private void maybeRefreshTargets() {
+        ensureProcessConfiguration();
         long now = System.currentTimeMillis();
         if (now - mLastTargetsRefreshMs >= TARGETS_REFRESH_COOLDOWN_MS) {
             mLastTargetsRefreshMs = now;
@@ -776,6 +801,7 @@ public class TrickyStoreService {
     }
 
     private void maybeRefreshKeyBox() {
+        ensureProcessConfiguration();
         long now = SystemClock.elapsedRealtime();
         if (mLastKeyboxRefreshElapsedMs != 0L
                 && now - mLastKeyboxRefreshElapsedMs < CONFIG_REFRESH_COOLDOWN_MS) {
@@ -792,6 +818,7 @@ public class TrickyStoreService {
     }
 
     private void maybeRefreshPatchLevel() {
+        ensureProcessConfiguration();
         long now = SystemClock.elapsedRealtime();
         if (mLastPatchRefreshElapsedMs != 0L
                 && now - mLastPatchRefreshElapsedMs < CONFIG_REFRESH_COOLDOWN_MS) {

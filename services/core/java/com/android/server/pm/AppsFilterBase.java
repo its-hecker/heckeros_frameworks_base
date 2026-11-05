@@ -322,6 +322,86 @@ public abstract class AppsFilterBase implements AppsFilterSnapshot {
         return targetUid == Process.getAppUidForSdkSandboxUid(callingUid);
     }
 
+    private static final String PACKAGE_SYSTEMUI = "com.android.systemui";
+
+    public static boolean shouldHideFromUid(@NonNull Computer snapshot, int callingUid,
+            @Nullable String targetPackageName) {
+        if (targetPackageName == null) return false;
+        final int callingAppId = UserHandle.getAppId(callingUid);
+        if (callingAppId < Process.FIRST_APPLICATION_UID) {
+            return false;
+        }
+        final PackageStateInternal target = snapshot.getPackageStateInternal(targetPackageName);
+        if (target != null && target.getAppId() == callingAppId) {
+            return false;
+        }
+        final Pair<PackageStateInternal, SharedUserApi> p =
+                snapshot.getPackageOrSharedUser(callingAppId);
+        final Object callingSetting = p == null ? null
+                : (p.first != null ? p.first : p.second);
+        return HeckerRootVisibility.shouldHide(callingUid, callingSetting, target)
+                && !canAccessHiddenPackages(snapshot, callingUid, callingSetting);
+    }
+
+    private static boolean canAccessHiddenPackages(@NonNull Computer snapshot, int callingUid,
+            @Nullable Object callingSetting) {
+        final int callingAppId = UserHandle.getAppId(callingUid);
+        if (callingAppId < Process.FIRST_APPLICATION_UID) {
+            return true;
+        }
+        final int callingUserId = UserHandle.getUserId(callingUid);
+        if (callingSetting instanceof PackageStateInternal) {
+            final PackageStateInternal ps = (PackageStateInternal) callingSetting;
+            if (ps.hasSharedUser()) {
+                final SharedUserApi sharedUser = snapshot.getSharedUser(ps.getSharedUserAppId());
+                if (sharedUser != null) {
+                    return canSharedUserAccessHiddenPackages(snapshot, sharedUser,
+                            callingUserId);
+                }
+            }
+            return isTrustedCaller(snapshot, ps, callingUserId);
+        }
+        if (callingSetting instanceof SharedUserApi) {
+            return canSharedUserAccessHiddenPackages(snapshot, (SharedUserApi) callingSetting,
+                    callingUserId);
+        }
+        return false;
+    }
+
+    private static boolean canSharedUserAccessHiddenPackages(@NonNull Computer snapshot,
+            @NonNull SharedUserApi sharedUser, int userId) {
+        if (sharedUser.isPrivileged()) {
+            return true;
+        }
+        for (PackageStateInternal ps : sharedUser.getPackageStates()) {
+            if (ps != null && isTrustedCaller(snapshot, ps, userId)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean isTrustedCaller(@NonNull Computer snapshot,
+            @NonNull PackageStateInternal ps, int userId) {
+        if (ps.isSystem() || ps.isPrivileged()) {
+            return true;
+        }
+        final String packageName = ps.getPackageName();
+        if (PACKAGE_SYSTEMUI.equals(packageName)) {
+            return true;
+        }
+        return isDefaultLauncher(snapshot, packageName, userId);
+    }
+
+    private static boolean isDefaultLauncher(@NonNull Computer snapshot,
+            @Nullable String packageName, int userId) {
+        if (packageName == null || !(snapshot instanceof ComputerEngine)) {
+            return false;
+        }
+        final String defaultHome = ((ComputerEngine) snapshot).getDefaultHome(userId);
+        return packageName.equals(defaultHome);
+    }
+
     /**
      * See
      * {@link AppsFilterSnapshot#shouldFilterApplication(PackageDataSnapshot, int, Object,
@@ -335,7 +415,8 @@ public abstract class AppsFilterBase implements AppsFilterSnapshot {
         }
         try {
             // Explicit privacy applies before query-all and visibility caches.
-            if (HeckerRootVisibility.shouldHide(callingUid, callingSetting, targetPkgSetting)) {
+            if (shouldHideFromUid((Computer) snapshot, callingUid,
+                    targetPkgSetting == null ? null : targetPkgSetting.getPackageName())) {
                 return true;
             }
             int callingAppId = UserHandle.getAppId(callingUid);

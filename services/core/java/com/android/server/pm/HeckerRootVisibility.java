@@ -24,15 +24,69 @@ import java.util.Set;
 public final class HeckerRootVisibility {
     static final String SETTING = "hecker_root_private_apps";
     private static final Set<String> MANAGERS = Set.of(
-            "com.rifsxd.ksunext", "me.weishu.kernelsu", "com.topjohnwu.magisk", "me.bmax.apatch");
-    private static final Set<String> ROM_COMPONENTS = Set.of("org.hecker.suite", "org.hecker.netlab");
+            "com.topjohnwu.magisk",
+            "com.rifsxd.ksunext",
+            "io.github.lsposed.manager",
+            "io.github.vvb2060.magisk",
+            "eu.chainfire.supersu",
+            "com.koushikdutta.superuser",
+            "com.noshufou.android.su",
+            "com.noshufou.android.su.elite",
+            "com.thirdparty.superuser",
+            "com.yellowes.su",
+            "me.weishu.kernelsu",
+            "me.bmax.apatch",
+            "com.kingroot.kinguser",
+            "com.kingo.root",
+            "com.smedialink.oneclickroot",
+            "com.zhiqupk.root.global",
+            "com.alephzain.framaroot",
+            "com.devadvance.rootcloak",
+            "com.devadvance.rootcloakplus",
+            "de.robv.android.xposed.installer",
+            "com.saurik.substrate",
+            "com.amphoras.hidemyroot",
+            "com.amphoras.hidemyrootadfree",
+            "com.formyhm.hiderootPremium",
+            "com.formyhm.hideroot",
+            "com.koushikdutta.rommanager",
+            "com.koushikdutta.rommanager.license",
+            "com.dimonvideo.luckypatcher",
+            "com.chelpus.lackypatch",
+            "com.chelpus.luckypatcher",
+            "com.solohsu.android.edxp.manager",
+            "org.meowcat.edxposed.manager",
+            "org.lsposed.manager",
+            "cc.madkite.freedom",
+            "com.ramdroid.appquarantine",
+            "com.ramdroid.appquarantinepro",
+            "com.zachspong.temprootremovejb"
+    );
+
+    private static final Set<String> ROM_PACKAGES_EXACT = Set.of(
+            "lineageos.platform", "org.hecker.suite", "org.hecker.netlab", "org.hecker.vpn", "org.hecker.librepods"
+    );
+
+    private static final String[] ROM_PACKAGE_PREFIXES = {
+            "org.lineageos.",
+            "co.aospa.",
+            "org.protonaosp.",
+            "org.omnirom.",
+            "com.android.axion.",
+            "com.axion.",
+            "com.libremobileos.",
+            "com.crdroid.",
+            "io.chaldeaprjkt.",
+            "org.lunaris."
+    };
+
     private static final Set<String> ROM_PROTECTED = Set.of("android", "com.android.systemui",
-            "com.android.settings", "com.android.permissioncontroller", "org.hecker.suite");
+            "com.android.settings", "com.android.permissioncontroller", "org.hecker.suite",
+            "com.android.launcher3", "com.google.android.apps.nexuslauncher", "org.hecker.vpn", "org.hecker.netlab", "org.hecker.librepods");
     private static volatile Map<Integer, Set<String>> sTargets = Collections.emptyMap();
     private static volatile Map<Integer, Map<String, Integer>> sCompatibility = Collections.emptyMap();
     static final String[] SETTINGS = {SETTING, "hecker_allow_downgrade_apps",
-            "hecker_hide_developer_options_apps", "hecker_bootloader_spoof_apps",
-            "hecker_hide_custom_rom_apps"};
+            "hecker_hide_developer_options_apps", "hecker_bootloader_spoof_apps"};
     private static boolean sStarted;
 
     static synchronized void start(Context context) {
@@ -90,7 +144,9 @@ public final class HeckerRootVisibility {
         if (packageName == null) return 0;
         Map<String, Integer> selected = sCompatibility.get(userId);
         int flags = selected == null ? 0 : selected.getOrDefault(packageName, 0);
-        return ROM_PROTECTED.contains(packageName) ? flags & ~16 : flags;
+        // ROM visibility is the device-wide default for app processes.
+        // Native OS/Hecker components retain their real feature properties and service access.
+        return ROM_PROTECTED.contains(packageName) ? flags & ~16 : flags | 16;
     }
 
     /** APK code is shared: every installed Android user must explicitly opt in. */
@@ -102,13 +158,20 @@ public final class HeckerRootVisibility {
         return true;
     }
 
+    static boolean isRomPackage(String packageName) {
+        if (packageName == null) return false;
+        if (ROM_PACKAGES_EXACT.contains(packageName)) return true;
+        for (String prefix : ROM_PACKAGE_PREFIXES) if (packageName.startsWith(prefix)) return true;
+        return false;
+    }
+
     static boolean shouldHide(int callingUid, Object callingSetting, PackageStateInternal target) {
         int appId = UserHandle.getAppId(callingUid);
         if (appId < Process.FIRST_APPLICATION_UID || target == null
                 || appId == target.getAppId())
             return false;
         boolean manager = MANAGERS.contains(target.getPackageName());
-        boolean romComponent = ROM_COMPONENTS.contains(target.getPackageName());
+        boolean romComponent = isRomPackage(target.getPackageName());
         if (!manager && !romComponent) return false;
         Set<String> selected = sTargets.get(UserHandle.getUserId(callingUid));
         if (callingSetting instanceof PackageStateInternal) {

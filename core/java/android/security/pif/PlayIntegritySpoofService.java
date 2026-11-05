@@ -1,12 +1,18 @@
 /* Copyright (C) 2026 Evolution X
  * Copyright (C) 2026 HeckerOS
  * SPDX-License-Identifier: Apache-2.0
+ * PenguinOS/celerity@947644f88d63b82179deec4d9149a1e4332584a3, merged with
  * Evolution-X/frameworks_base@c4d3eeb6aba62768dfb11c26711728b99daa42dd.
  * HeckerOS retains privileged Settings configuration and the existing scoped JNI bridge.
  */
 package android.security.pif;
 
 import android.app.ActivityThread;
+import android.content.Context;
+import android.os.Process;
+import android.os.SystemClock;
+import android.provider.Settings;
+import java.util.HashSet;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.Signature;
@@ -25,6 +31,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.Map;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Objects;
 import java.util.Set;
@@ -38,43 +45,94 @@ public final class PlayIntegritySpoofService {
     private static final String VENDING_PACKAGE = "com.android.vending";
     private static final String GMS_PACKAGE = "com.google.android.gms";
 
-    // PenguinOS-style Photos compatibility without the obsolete PropImitationHooks.
-    // Uses the existing HeckerOS property writer, but never runs in non-Photos apps.
-    private static final String PHOTOS_PACKAGE = "com.google.android.apps.photos";
-    private static final Set<String> PHOTOS_OLDER_FEATURES = Set.of(
-            "PIXEL_2017_EXPERIENCE", "PIXEL_2017_PRELOAD",
-            "PIXEL_2018_EXPERIENCE", "PIXEL_2018_PRELOAD",
-            "PIXEL_2019_EXPERIENCE", "PIXEL_2019_MIDYEAR_EXPERIENCE",
-            "PIXEL_2019_MIDYEAR_PRELOAD", "PIXEL_2019_PRELOAD",
-            "PIXEL_2020_EXPERIENCE", "PIXEL_2020_MIDYEAR_EXPERIENCE",
-            "PIXEL_2021_MIDYEAR_EXPERIENCE");
-    private static final Set<String> PHOTOS_TENSOR_FEATURES = Set.of(
-            "PIXEL_2021_EXPERIENCE", "PIXEL_2022_EXPERIENCE",
-            "PIXEL_2022_MIDYEAR_EXPERIENCE", "PIXEL_2023_EXPERIENCE",
-            "PIXEL_2023_MIDYEAR_EXPERIENCE", "PIXEL_2024_EXPERIENCE",
-            "PIXEL_2024_MIDYEAR_EXPERIENCE", "PIXEL_2025_EXPERIENCE",
-            "PIXEL_2025_MIDYEAR_EXPERIENCE");
+    private static final String GPHOTOS_PACKAGE = "com.google.android.apps.photos";
+
+    private static final Map<String, Object> PIXEL_XL_PROPS = Map.of(
+        "BRAND", "google",
+        "MANUFACTURER", "Google",
+        "DEVICE", "marlin",
+        "PRODUCT", "marlin",
+        "HARDWARE", "marlin",
+        "ID", "QP1A.191005.007.A3",
+        "MODEL", "Pixel XL",
+        "FINGERPRINT", "google/marlin/marlin:10/QP1A.191005.007.A3/5972272:user/release-keys"
+    );
+
+    private static final Set<String> PRIV_PKGS = new HashSet<>();
+    private static final Set<String> FEATURES_PIXEL = new HashSet<>();
+    private static final Set<String> FEATURES_PIXEL_OTHERS = new HashSet<>();
+    private static final Set<String> FEATURES_TENSOR = new HashSet<>();
+    private static final Set<String> FEATURES_NEXUS = new HashSet<>();
+
+    static {
+        Collections.addAll(FEATURES_PIXEL,
+                "com.google.android.apps.photos.PIXEL_2019_PRELOAD",
+                "com.google.android.apps.photos.PIXEL_2019_MIDYEAR_PRELOAD",
+                "com.google.android.apps.photos.PIXEL_2018_PRELOAD",
+                "com.google.android.apps.photos.PIXEL_2017_PRELOAD",
+                "com.google.android.feature.PIXEL_2021_MIDYEAR_EXPERIENCE",
+                "com.google.android.feature.PIXEL_2020_EXPERIENCE",
+                "com.google.android.feature.PIXEL_2020_MIDYEAR_EXPERIENCE",
+                "com.google.android.feature.PIXEL_2019_EXPERIENCE",
+                "com.google.android.feature.PIXEL_2019_MIDYEAR_EXPERIENCE",
+                "com.google.android.feature.PIXEL_2018_EXPERIENCE",
+                "com.google.android.feature.PIXEL_2017_EXPERIENCE",
+                "com.google.android.feature.PIXEL_EXPERIENCE",
+                "com.google.android.feature.GOOGLE_BUILD",
+                "com.google.android.feature.GOOGLE_EXPERIENCE"
+        );
+
+        Collections.addAll(FEATURES_PIXEL_OTHERS,
+                "com.google.android.feature.ASI",
+                "com.google.android.feature.ANDROID_ONE_EXPERIENCE",
+                "com.google.android.feature.GOOGLE_FI_BUNDLED",
+                "com.google.android.feature.LILY_EXPERIENCE",
+                "com.google.android.feature.TURBO_PRELOAD",
+                "com.google.android.feature.WELLBEING",
+                "com.google.lens.feature.IMAGE_INTEGRATION",
+                "com.google.lens.feature.CAMERA_INTEGRATION",
+                "com.google.photos.trust_debug_certs",
+                "com.google.android.feature.AER_OPTIMIZED",
+                "com.google.android.feature.NEXT_GENERATION_ASSISTANT",
+                "android.software.game_service",
+                "com.google.android.feature.EXCHANGE_6_2",
+                "com.google.android.apps.dialer.call_recording_audio",
+                "com.google.android.apps.dialer.SUPPORTED"
+        );
+
+        Collections.addAll(FEATURES_TENSOR,
+                "com.google.android.feature.PIXEL_2026_EXPERIENCE",
+                "com.google.android.feature.PIXEL_2026_MIDYEAR_EXPERIENCE",
+                "com.google.android.feature.PIXEL_2025_EXPERIENCE",
+                "com.google.android.feature.PIXEL_2025_MIDYEAR_EXPERIENCE",
+                "com.google.android.feature.PIXEL_2024_EXPERIENCE",
+                "com.google.android.feature.PIXEL_2024_MIDYEAR_EXPERIENCE",
+                "com.google.android.feature.PIXEL_2023_EXPERIENCE",
+                "com.google.android.feature.PIXEL_2023_MIDYEAR_EXPERIENCE",
+                "com.google.android.feature.PIXEL_2022_EXPERIENCE",
+                "com.google.android.feature.PIXEL_2022_MIDYEAR_EXPERIENCE",
+                "com.google.android.feature.PIXEL_2021_EXPERIENCE"
+        );
+
+        Collections.addAll(FEATURES_NEXUS,
+                "com.google.android.apps.photos.NEXUS_PRELOAD",
+                "com.google.android.apps.photos.nexus_preload",
+                "com.google.android.feature.PIXEL_EXPERIENCE",
+                "com.google.android.feature.GOOGLE_BUILD",
+                "com.google.android.feature.GOOGLE_EXPERIENCE"
+        );
+
+        Collections.addAll(PRIV_PKGS,
+                "com.google.android.googlequicksearchbox",
+                "com.google.android.apps.photos",
+                "com.google.android.apps.pixel.agent",
+                "com.google.android.apps.pixel.creativeassistant"
+        );
+    }
+
     public static boolean isPhotosPackage(String packageName) {
-        return PHOTOS_PACKAGE.equals(packageName);
+        return TextUtils.equals(GPHOTOS_PACKAGE, packageName);
     }
-    public static boolean photosHasSystemFeature(String feature, boolean original) {
-        if (!isPhotosPackage(ActivityThread.currentPackageName()) || feature == null) return original;
-        if (original && (PHOTOS_OLDER_FEATURES.stream().anyMatch(feature::contains)
-                || PHOTOS_TENSOR_FEATURES.stream().anyMatch(feature::contains))) return false;
-        if (!original && "com.google.android.apps.photos.NEXUS_PRELOAD".equalsIgnoreCase(feature))
-            return true;
-        return original;
-    }
-    public void spoofPhotosProps() {
-        if (!isPhotosPackage(ActivityThread.currentPackageName())) return;
-        Map.of("PRODUCT", "sailfish", "DEVICE", "sailfish",
-                "MANUFACTURER", "Google", "BRAND", "google",
-                "MODEL", "Pixel",
-                "FINGERPRINT", "google/sailfish/sailfish:10/QP1A.191005.007.A3/5972272:user/release-keys")
-                .forEach((field, value) -> spoofField(field, value, "Photos"));
-    }
-
-
 
     private static final String ROM_SIGNATURE_DATA = "MIIFyTCCA7GgAwIBAgIVALyxxl+zDS9SL68SzOr48309eAZyMA0GCSqGSIb3DQEBCwUAMHQxCzAJ" +
             "BgNVBAYTAlVTMRMwEQYDVQQIEwpDYWxpZm9ybmlhMRYwFAYDVQQHEw1Nb3VudGFpbiBWaWV3MRQw" +
@@ -143,6 +201,12 @@ public final class PlayIntegritySpoofService {
     private final Map<String, String> mBuildFields = new ConcurrentHashMap<>();
 
     private volatile boolean mConfigLoaded = false;
+    private volatile boolean mSpoofPhotos = true;
+    private volatile Context mContext;
+    private volatile boolean mSettingsResolved;
+    private final Object mLoadLock = new Object();
+    private long mLastLoadAttempt = -5000;
+    private static final long LOAD_RETRY_INTERVAL_MS = 5000;
     private volatile boolean mSignatureSpoofed = false;
     private volatile boolean mLoadFailureLogged = false;
 
@@ -155,7 +219,47 @@ public final class PlayIntegritySpoofService {
         return sInstance;
     }
 
-    public void loadConfig(String content) {
+    /** Resolve the existing HeckerOS store before any application code runs. */
+    public void initialize(Context context, String packageName, String processName) {
+        if (context == null || Process.isIsolated()) return;
+        boolean target = (GMS_PACKAGE.equals(packageName) && isDroidGuard(processName))
+                || (VENDING_PACKAGE.equals(packageName) && isVending(processName));
+        if (!target && !isPhotosPackage(packageName)) return;
+        mContext = context.getApplicationContext();
+        // ActivityThread calls us before makeApplicationInner(), so the app's
+        // Application context can still be null at this exact point.
+        if (mContext == null) mContext = context;
+        ensureLoaded();
+    }
+
+    /** Penguin's retry policy, adapted to Hecker's established privileged storage. */
+    private void ensureLoaded() {
+        if (mSettingsResolved || mContext == null) return;
+        synchronized (mLoadLock) {
+            if (mSettingsResolved) return;
+            long now = SystemClock.uptimeMillis();
+            if (now - mLastLoadAttempt < LOAD_RETRY_INTERVAL_MS) return;
+            mLastLoadAttempt = now;
+            try {
+                android.content.ContentResolver resolver = mContext.getContentResolver();
+                String content = Settings.Global.getInt(resolver, "hecker_pif_enabled", 1) == 0
+                        ? null : Settings.Global.getString(resolver, "hecker_pif_config");
+                boolean photos = Settings.Global.getInt(resolver, "hecker_pif_photos", 1) != 0;
+                loadConfig(content);
+                mSpoofPhotos = photos;
+                mSettingsResolved = true; // Explicit empty/disabled is resolved, not a read failure.
+                mLoadFailureLogged = false;
+            } catch (RuntimeException unavailable) {
+                if (!mLoadFailureLogged) {
+                    mLoadFailureLogged = true;
+                    Log.w(TAG, "Integrity configuration is temporarily unavailable");
+                }
+            }
+        }
+    }
+
+    public synchronized void loadConfig(String content) {
+        mConfigLoaded = false;
         mVerboseLogs = 0; mSpoofBuild = true; mSpoofProps = true;
         mSpoofProvider = false; mSpoofSignature = false; mSpoofVendingFinger = "0";
         mSpoofVendingSdk = 0; mDebug = false; sBlockCertificateChain = false;
@@ -164,6 +268,7 @@ public final class PlayIntegritySpoofService {
         mDeviceInitialSdkInt = "";
         mConfigLoaded = false;
         if (content == null || content.isBlank() || content.length() > 65536) return;
+        if (content.startsWith("\uFEFF")) content = content.substring(1);
 
         try {
             String trimmed = content.trim();
@@ -184,8 +289,12 @@ public final class PlayIntegritySpoofService {
             mConfigLoaded = true;
             Log.i(TAG, "PIF config loaded, fields=" + mBuildFields.size()
                     + ", props=" + mSystemProps.size());
-        } catch (Throwable e) {
-            Log.e(TAG, "Failed to load PIF config", e);
+        } catch (IOException | RuntimeException invalid) {
+            mBuildFields.clear();
+            mSystemProps.clear();
+            mDeviceInitialSdkInt = "";
+            mConfigLoaded = false;
+            Log.w(TAG, "Invalid integrity profile; compatibility is disabled");
         }
     }
 
@@ -213,7 +322,7 @@ public final class PlayIntegritySpoofService {
             mBuildFields.putIfAbsent("PRODUCT", head[1]);
             mBuildFields.putIfAbsent("DEVICE", head[2]);
         }
-        mBuildFields.putIfAbsent("RELEASE", rest[0]);
+        if (!"CANARY".equalsIgnoreCase(rest[0])) mBuildFields.putIfAbsent("RELEASE", rest[0]);
         mBuildFields.putIfAbsent("ID", rest[1]);
         mBuildFields.putIfAbsent("INCREMENTAL", incrementalAndType[0]);
         mBuildFields.putIfAbsent("TYPE", incrementalAndType[1]);
@@ -259,6 +368,10 @@ public final class PlayIntegritySpoofService {
                     case NULL:
                         reader.nextNull();
                         continue;
+                    case BEGIN_OBJECT:
+                    case BEGIN_ARRAY:
+                        reader.skipValue();
+                        continue;
                     default:
                         value = reader.nextString();
                         break;
@@ -266,6 +379,8 @@ public final class PlayIntegritySpoofService {
                 processKeyValue(key, value);
             }
             reader.endObject();
+            if (reader.peek() != android.util.JsonToken.END_DOCUMENT)
+                throw new IllegalArgumentException("Trailing profile content");
         }
     }
 
@@ -330,8 +445,46 @@ public final class PlayIntegritySpoofService {
     }
 
     public boolean shouldSpoof(String processName) {
-        if (!mConfigLoaded) return false;
-        return DROIDGUARD_PACKAGE.equals(processName) || VENDING_PACKAGE.equals(processName);
+        if (!isTargetProcess(processName)) return false;
+        ensureLoaded();
+        return mConfigLoaded;
+    }
+
+    public boolean shouldSpoofPhotos(String packageName) {
+        if (!isPhotosPackage(packageName)) return false;
+        ensureLoaded();
+        return mSpoofPhotos;
+    }
+
+    public void spoofPhotosProps() {
+        if (!shouldSpoofPhotos(ActivityThread.currentPackageName())) return;
+        for (Map.Entry<String, Object> entry : PIXEL_XL_PROPS.entrySet()) {
+            spoofField(entry.getKey(), String.valueOf(entry.getValue()), "Photos");
+        }
+    }
+
+    public Boolean hasSystemFeature(String name, int version) {
+        if (name == null) return null;
+
+        final String pkgName = ActivityThread.currentPackageName();
+        if (pkgName != null && PRIV_PKGS.contains(pkgName)) {
+            if (shouldSpoofPhotos(pkgName)) {
+                if (FEATURES_PIXEL.contains(name)) return false;
+                if (FEATURES_PIXEL_OTHERS.contains(name)) return true;
+                if (FEATURES_TENSOR.contains(name)) return false;
+                if (FEATURES_NEXUS.contains(name)) return true;
+            } else {
+                if (FEATURES_PIXEL.contains(name)) return true;
+                if (FEATURES_PIXEL_OTHERS.contains(name)) return true;
+                if (FEATURES_TENSOR.contains(name)) return true;
+                if (FEATURES_NEXUS.contains(name)) return true;
+            }
+        }
+
+        if (FEATURES_PIXEL.contains(name)) return true;
+        if (FEATURES_PIXEL_OTHERS.contains(name)) return true;
+
+        return null;
     }
 
     public boolean isGmsProcess(String dataDir) {
@@ -826,6 +979,9 @@ public final class PlayIntegritySpoofService {
 
     // HeckerOS configuration and native-property bridge.
     private static String resolveDeviceInitialSdk(String device, String configuredSdk) {
+        if (configuredSdk != null && !configuredSdk.isEmpty()) {
+            return configuredSdk;
+        }
         if (device != null) {
             switch (device) {
                 case "oriole":
@@ -864,7 +1020,7 @@ public final class PlayIntegritySpoofService {
                     break;
             }
         }
-        return (configuredSdk != null && !configuredSdk.isEmpty()) ? configuredSdk : "32";
+        return "32";
     }
 
     public static boolean isTargetProcess(String processName) {

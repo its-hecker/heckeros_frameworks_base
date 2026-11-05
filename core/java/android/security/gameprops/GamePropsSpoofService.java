@@ -100,7 +100,7 @@ public final class GamePropsSpoofService {
     private volatile boolean mConfigLoaded = false;
 
     /** packageName → { fieldName → value } from JSON game-props config */
-    private final Map<String, Map<String, String>> mGameConfigs = new ConcurrentHashMap<>();
+    private volatile Map<String, Map<String, String>> mGameConfigs = Map.of();
 
     // -------------------------------------------------------------------------
     // Built-in device profiles (formerly in PerAppsPropsUtils static block)
@@ -162,10 +162,7 @@ public final class GamePropsSpoofService {
     // -------------------------------------------------------------------------
 
     /** @hide */
-    public void loadConfig() {
-        mGameConfigs.clear();
-        mEnabled      = false;
-        mConfigLoaded = false;
+    public synchronized void loadConfig() {
 
         IActivityManager service = ActivityManager.getService();
         if (service == null) {
@@ -183,43 +180,51 @@ public final class GamePropsSpoofService {
 
         if (content == null || content.isEmpty()) {
             // Empty config is terminal for this process, same as a successful load.
+            mGameConfigs = Map.of();
+            mEnabled = false;
+            mDebug = false;
             mConfigLoaded = true;
             Log.d(TAG, "No gameprops config in Settings.Secure");
             return;
         }
 
         try {
+            if (content.length() > 256 * 1024) throw new IllegalArgumentException("Game config too large");
             parseJson(content);
             mConfigLoaded = true;
             Log.i(TAG, "Game props config loaded, games=" + mGameConfigs.size()
                     + ", enabled=" + mEnabled);
-        } catch (Throwable e) {
-            Log.e(TAG, "Failed to parse game props config", e);
+        } catch (IOException | RuntimeException invalid) {
+            mEnabled = false;
+            mDebug = false;
+            mGameConfigs = Map.of();
+            mConfigLoaded = false;
+            Log.w(TAG, "Invalid game profile; compatibility is disabled");
         }
     }
 
-    private void parseJson(String content) {
+    private void parseJson(String content) throws IOException {
+        Map<String, Map<String, String>> next = new HashMap<>();
+        boolean enabled = false, debug = false;
         try (JsonReader reader = new JsonReader(new StringReader(content))) {
             reader.beginObject();
             while (reader.hasNext()) {
                 String key = reader.nextName();
-                if ("enabled".equals(key)) {
-                    mEnabled = reader.nextBoolean();
-                } else if ("debug".equals(key)) {
-                    mDebug = reader.nextBoolean();
-                } else if ("games".equals(key)) {
-                    parseGames(reader);
-                } else {
-                    reader.skipValue();
-                }
+                if ("enabled".equals(key)) enabled = reader.nextBoolean();
+                else if ("debug".equals(key)) debug = reader.nextBoolean();
+                else if ("games".equals(key)) parseGames(reader, next);
+                else reader.skipValue();
             }
             reader.endObject();
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to parse JSON config", e);
+            if (reader.peek() != android.util.JsonToken.END_DOCUMENT)
+                throw new IllegalArgumentException("Trailing game profile content");
         }
+        mGameConfigs = Map.copyOf(next);
+        mEnabled = enabled;
+        mDebug = debug;
     }
 
-    private void parseGames(JsonReader reader) throws IOException {
+    private void parseGames(JsonReader reader, Map<String, Map<String, String>> next) throws IOException {
         reader.beginObject();
         while (reader.hasNext()) {
             String packageName = reader.nextName();
@@ -230,7 +235,7 @@ public final class GamePropsSpoofService {
             }
             reader.endObject();
             if (!gameProps.isEmpty()) {
-                mGameConfigs.put(packageName, gameProps);
+                next.put(packageName, Map.copyOf(gameProps));
                 if (mDebug) Log.d(TAG, "Loaded config for " + packageName
                         + ": " + gameProps.size() + " props");
             }

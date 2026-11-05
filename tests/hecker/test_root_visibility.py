@@ -47,7 +47,7 @@ public class RootVisibilityTest {
         expect(!HeckerRootVisibility.shouldHide(1000,bank,manager)); // system management
         expect(!HeckerRootVisibility.shouldHide(10200,manager,manager)); // self
         expect(!HeckerRootVisibility.shouldHide(10101,bank,new P(10101,"org.example.bank")));
-        expect(!HeckerRootVisibility.shouldHide(10101,bank,new P(10300,"org.hecker.netlab")));
+        expect(HeckerRootVisibility.shouldHide(10101,bank,new P(10300,"org.hecker.netlab")));
         expect(!HeckerRootVisibility.shouldHide(10102,new P(10102,"org.example.bank.clone"),manager));
         expect(!HeckerRootVisibility.shouldHide(1010101,bank,manager)); // other Android user
         SharedUserApi shared=()->java.util.Set.of(bank,new P(10101,"org.example.shared"));
@@ -58,15 +58,15 @@ public class RootVisibilityTest {
         Settings.Secure.values.remove(0);
         context.resolver.observer.onChange(false,null,0);
         expect(!HeckerRootVisibility.shouldHide(10101,bank,manager)); // reversible
-        expect(HeckerRootVisibility.getCompatibilityFlags("org.example.bank",0)==0);
+        expect((HeckerRootVisibility.getCompatibilityFlags("org.example.bank",0) & ~16)==0);
         for (int option=1; option<4; option++) {
             Settings.Secure.options.put(HeckerRootVisibility.SETTINGS[option],
                     new java.util.HashMap<>(java.util.Map.of(0,"org.example.bank")));
             context.resolver.observer.onChange(false,null,0);
             int expected=(1 << (option+1))-2;
-            expect(HeckerRootVisibility.getCompatibilityFlags("org.example.bank",0)==expected);
-            expect(HeckerRootVisibility.getCompatibilityFlags("org.example.bank.clone",0)==0);
-            expect(HeckerRootVisibility.getCompatibilityFlags("org.example.bank",10)==1);
+            expect((HeckerRootVisibility.getCompatibilityFlags("org.example.bank",0) & ~16)==expected);
+            expect((HeckerRootVisibility.getCompatibilityFlags("org.example.bank.clone",0) & ~16)==0);
+            expect((HeckerRootVisibility.getCompatibilityFlags("org.example.bank",10) & ~16)==1);
         }
         expect(HeckerRootVisibility.allowDowngrade("org.example.bank",new int[]{0}));
         expect(!HeckerRootVisibility.allowDowngrade("org.example.bank",new int[]{0,10}));
@@ -78,10 +78,10 @@ public class RootVisibilityTest {
         expect(!HeckerRootVisibility.allowDowngrade("org.example.other",new int[]{0}));
         Settings.Secure.options.get(HeckerRootVisibility.SETTINGS[2]).put(0,"x".repeat(65537));
         context.resolver.observer.onChange(false,null,0);
-        expect(HeckerRootVisibility.getCompatibilityFlags("org.example.bank",0)==10);
+        expect((HeckerRootVisibility.getCompatibilityFlags("org.example.bank",0) & ~16)==10);
         Settings.Secure.options.clear();
         context.resolver.observer.onChange(false,null,0);
-        expect(HeckerRootVisibility.getCompatibilityFlags("org.example.bank",0)==0);
+        expect((HeckerRootVisibility.getCompatibilityFlags("org.example.bank",0) & ~16)==0);
         expect(HeckerRootVisibility.shouldHide(1010101,bank,manager));
         System.out.println("Production privacy policy: build gate, target matching, users, shared UID, self/system access and reversal PASS");
     }

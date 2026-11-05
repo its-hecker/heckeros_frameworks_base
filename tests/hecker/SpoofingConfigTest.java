@@ -175,6 +175,13 @@ public final class SpoofingConfigTest {
         games.loadConfig();
         check(!games.isEnabled()&&games.getAllGameConfigs().isEmpty(),"malformed game profile is inert");
         gameOverride[0]=null;
+        games.loadConfig();
+        android.provider.Settings.Secure.values.put("per_apps_device_spoof","com.other.game:OP13,com.game.alpha:OP13");
+        games.spoofForPackage("com.other.game",context);
+        check(android.os.Build.MODEL.equals("PJZ110"),"Penguin named per-app device profile");
+        games.spoofForPackage("com.game.alpha",context);
+        check(android.os.Build.MODEL.equals("Test Model"),"private JSON profile retains priority over named profile");
+        android.provider.Settings.Secure.values.clear();
 
         TrickyStoreService tricky=TrickyStoreService.getInstance();
         check(tricky.needGenerate(10001,new String[]{"com.game.alpha"}),"explicit generation mode");
@@ -260,6 +267,20 @@ public final class SpoofingConfigTest {
         store.put(3,null);
         Binder.uid=10001;
         check(!tricky.hasKeyboxes()&&!tricky.needGenerate(10001,new String[]{"com.game.alpha"}),"removing keybox disables certificate path");
+        check(AttestationUtils.isValidPatchLevel("2024-02-29"),"leap-year patch accepted");
+        check(!AttestationUtils.isValidPatchLevel("2026-02-29"),"non-leap patch rejected");
+        check(!AttestationUtils.isValidPatchLevel("2026-13-05"),"invalid patch month rejected");
+        check(!AttestationUtils.isValidPatchLevel("2026-02-30"),"invalid patch day rejected");
+        Binder.uid=1000;store.put(3,xml);store.put(HeckerSpoofConfig.TARGETS,"com.game.alpha!");
+        Binder.uid=10001;tricky.initialize();
+        check(tricky.needGenerate(10001,new String[]{"com.game.alpha"}),"valid policy reload");
+        IActivityManager transport=ActivityManager.service;ActivityManager.service=null;
+        tricky.refreshTargets();tricky.refreshKeyBox();tricky.refreshPatchLevel();
+        check(tricky.needGenerate(10001,new String[]{"com.game.alpha"}),"failed transport preserves last complete policy");
+        ActivityManager.service=transport;Binder.uid=1000;store.put(HeckerSpoofConfig.TARGETS,"");
+        Binder.uid=10001;tricky.initialize();
+        check(!tricky.needGenerate(10001,new String[]{"com.game.alpha"})&&!tricky.hasKeyboxes(),
+                "successful explicit clear revokes targets and caller key access");
         System.out.println(checks+" configuration, access, parser, game and RSA/EC chain checks: PASS");
     }
 }

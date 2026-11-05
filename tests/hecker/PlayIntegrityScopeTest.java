@@ -20,8 +20,9 @@ public final class PlayIntegrityScopeTest {
         check(!p.isSpoofProviderEnabled()&&!p.isSpoofSignatureEnabled(), "upstream opt-in flags");
         Method sdk=PlayIntegritySpoofService.class.getDeclaredMethod("resolveDeviceInitialSdk",String.class,String.class);
         sdk.setAccessible(true);
-        check("34".equals(sdk.invoke(null,"shiba","32")), "initial API follows selected Pixel model");
-        check("35".equals(sdk.invoke(null,"stallion","32")), "latest device mapping");
+        check("32".equals(sdk.invoke(null,"shiba","32")), "explicit initial API has Penguin priority");
+        check("34".equals(sdk.invoke(null,"shiba","")), "initial API follows selected Pixel without override");
+        check("35".equals(sdk.invoke(null,"stallion","")), "latest device mapping");
         p.loadConfig("FINGERPRINT=google/shiba/shiba:17/CP21/123456:user/release-keys\n"
                 +"spoofProvider=true\nspoofSignature=true\nspoofVendingSdk=35\nspoofVendingFinger=1\n");
         check(p.isConfigLoaded()&&p.isSpoofProviderEnabled(), "current Evolution X numeric options");
@@ -33,6 +34,17 @@ public final class PlayIntegrityScopeTest {
         check(!p.isConfigLoaded()&&!p.shouldSpoof("com.android.vending"), "disabled profile is inert");
         p.loadConfig("MODEL=Incomplete profile\n");
         check(!p.isConfigLoaded(), "incomplete profile must not enable native property rules");
-        System.out.println("Evolution X PIF parser and process scope: PASS");
+        p.loadConfig("\uFEFFFINGERPRINT=google/shiba/shiba:CANARY/CP21/123456:user/release-keys\n");
+        check(p.isConfigLoaded(), "BOM-prefixed import");
+        check(!p.getBuildFields().containsKey("RELEASE"), "CANARY is not an Android release number");
+        p.loadConfig("{\"FINGERPRINT\":\"google/shiba/shiba:17/CP21/123456:user/release-keys\","
+                +"\"metadata\":{\"source\":\"manual\"},\"unused\":[1,2],\"spoofProvider\":true}");
+        check(p.isConfigLoaded()&&p.isSpoofProviderEnabled(), "nested metadata does not invalidate scalar config");
+        p.loadConfig("{\"FINGERPRINT\":\"partial\",\"spoofProvider\":true,");
+        check(!p.isConfigLoaded()&&p.getBuildFields().isEmpty()&&p.getSystemProps().isEmpty(),
+                "malformed replacement cannot retain partial rules");
+        p.loadConfig("{\"FINGERPRINT\":\"valid\"} trailing");
+        check(!p.isConfigLoaded(), "trailing JSON rejected");
+        System.out.println("Penguin PIF parser, explicit defaults and process scope: PASS");
     }
 }

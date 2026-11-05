@@ -17,9 +17,11 @@ def main():
     a = source.index('    private static final String PACKAGE_SYSTEMUI')
     b = source.index('    /**\n     * See\n', a)
     methods = source[a:b]
+    assert 'import android.util.Pair;' in source
     assert source.index('if (shouldHideFromUid(') < source.index('// use cache')
     engine = (ROOT/'services/core/java/com/android/server/pm/ComputerEngine.java').read_text()
     assert engine.count('AppsFilterBase.shouldHideFromUid(') == 3
+    assert 'public final String getDefaultHome(@UserIdInt int userId)' in engine
     stubs = dict(privacy.STUBS)
     stubs['android/annotation/NonNull.java'] = 'package android.annotation; public @interface NonNull {}'
     stubs['android/annotation/Nullable.java'] = 'package android.annotation; public @interface Nullable {}'

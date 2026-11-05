@@ -1092,6 +1092,22 @@ public class ComputerEngine implements Computer {
         return lastComponent;
     }
 
+    @GuardedBy("mDefaultHomeCache")
+    private final SparseArray<String> mDefaultHomeCache = new SparseArray<>();
+
+    @Nullable
+    public final String getDefaultHome(@UserIdInt int userId) {
+        synchronized (mDefaultHomeCache) {
+            final int index = mDefaultHomeCache.indexOfKey(userId);
+            if (index >= 0) {
+                return mDefaultHomeCache.valueAt(index);
+            }
+            final String defaultHome = mDefaultAppProvider.getDefaultHome(userId);
+            mDefaultHomeCache.put(userId, defaultHome);
+            return defaultHome;
+        }
+    }
+
     public final ComponentName getHomeActivitiesAsUser(List<ResolveInfo> allHomeCandidates,
             int userId) {
         Intent intent  = getHomeIntent();

@@ -7,6 +7,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
 STUBS = {
+'android/content/pm/SigningDetails.java': 'package android.content.pm; public class SigningDetails { public static final SigningDetails UNKNOWN=new SigningDetails(""); private final String digest; public SigningDetails(String d){digest=d;} public boolean hasSha256Certificate(byte[] expected){return java.util.HexFormat.of().formatHex(expected).equals(digest);} }',
 'android/net/Uri.java': 'package android.net; public class Uri {}',
 'android/os/Binder.java': 'package android.os; public class Binder { public static long clearCallingIdentity(){return 0;} public static void restoreCallingIdentity(long x){} }',
 'android/os/Handler.java': 'package android.os; public class Handler { public void post(Runnable r){r.run();} }',
@@ -20,7 +21,7 @@ STUBS = {
 'android/provider/Settings.java': 'package android.provider; public class Settings { public static class Secure { public static java.util.Map<Integer,String> values=new java.util.HashMap<>(); public static java.util.Map<String,java.util.Map<Integer,String>> options=new java.util.HashMap<>(); public static android.net.Uri getUriFor(String k){return new android.net.Uri();} public static String getStringForUser(android.content.ContentResolver c,String k,int u){return k.equals("hecker_root_private_apps")?values.get(u):options.getOrDefault(k,java.util.Collections.emptyMap()).get(u);} } }',
 'android/util/Slog.java': 'package android.util; public class Slog { public static int w(String t,String m){return 0;} }',
 'com/android/server/FgThread.java': 'package com.android.server; public class FgThread { public static android.os.Handler getHandler(){return new android.os.Handler();} }',
-'com/android/server/pm/pkg/PackageStateInternal.java': 'package com.android.server.pm.pkg; public interface PackageStateInternal { int getAppId(); String getPackageName(); }',
+'com/android/server/pm/pkg/PackageStateInternal.java': 'package com.android.server.pm.pkg; public interface PackageStateInternal { int getAppId(); String getPackageName(); default android.content.pm.SigningDetails getSigningDetails(){return android.content.pm.SigningDetails.UNKNOWN;} }',
 'com/android/server/pm/pkg/SharedUserApi.java': 'package com.android.server.pm.pkg; public interface SharedUserApi { java.util.Set<PackageStateInternal> getPackageStates(); }',
 }
 TEST = r'''
@@ -31,8 +32,10 @@ import android.provider.Settings;
 import com.android.server.pm.pkg.PackageStateInternal;
 import com.android.server.pm.pkg.SharedUserApi;
 public class RootVisibilityTest {
-    record P(int id, String name) implements PackageStateInternal {
+    record P(int id, String name, android.content.pm.SigningDetails signing) implements PackageStateInternal {
+        P(int id,String name){this(id,name,android.content.pm.SigningDetails.UNKNOWN);}
         public int getAppId(){return id;} public String getPackageName(){return name;}
+        public android.content.pm.SigningDetails getSigningDetails(){return signing;}
     }
     static void expect(boolean value) { if(!value) throw new AssertionError(); }
     public static void main(String[] args) {
@@ -44,6 +47,13 @@ public class RootVisibilityTest {
         SystemProperties.enabled=true;
         HeckerRootVisibility.start(context);
         expect(HeckerRootVisibility.shouldHide(10101,bank,manager));
+        P renamed=new P(10201,"kqvdie.zeykvw.hpbcyd",new android.content.pm.SigningDetails("79e590113c4c4c0c222978e413a5faa801666957b1212a328e46c00c69821bf7"));
+        expect(HeckerRootVisibility.shouldHide(10101,bank,renamed));
+        expect(!HeckerRootVisibility.shouldHide(10102,new P(10102,"org.example.unselected"),renamed));
+        expect(!HeckerRootVisibility.shouldHide(10101,bank,new P(10202,"random.manager",new android.content.pm.SigningDetails("00"))));
+        expect(!HeckerRootVisibility.shouldHide(1000,bank,renamed));
+        expect(!HeckerRootVisibility.shouldHide(10201,renamed,renamed));
+        expect(!HeckerRootVisibility.shouldHide(1010101,bank,renamed));
         expect(!HeckerRootVisibility.shouldHide(1000,bank,manager)); // system management
         expect(!HeckerRootVisibility.shouldHide(10200,manager,manager)); // self
         expect(!HeckerRootVisibility.shouldHide(10101,bank,new P(10101,"org.example.bank")));

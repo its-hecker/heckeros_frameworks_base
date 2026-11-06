@@ -14,6 +14,7 @@ import android.util.AtomicFile;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import com.android.server.pm.HeckerRootVisibility;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.nio.charset.StandardCharsets;
@@ -137,6 +138,11 @@ public final class HeckerSpoofConfigStore {
                 return config.toString();
             }
             Map<String, String> targets = targets(mValues.get(HeckerSpoofConfig.TARGETS));
+            // Resolve the per-app option in system_server, never from app-supplied flags.
+            // Imported explicit modes, especially SKIP, have priority.
+            for (String name : packages) if (!targets.containsKey(name)
+                    && (HeckerRootVisibility.getCompatibilityFlags(name, UserHandle.USER_SYSTEM) & 8) != 0)
+                targets.put(name, "AUTO");
             JSONArray ownTargets = new JSONArray();
             for (String name : packages) if (targets.containsKey(name)) {
                 ownTargets.put(new JSONObject().put("package", name).put("mode", targets.get(name)));

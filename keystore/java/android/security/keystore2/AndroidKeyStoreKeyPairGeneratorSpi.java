@@ -824,16 +824,19 @@ public abstract class AndroidKeyStoreKeyPairGeneratorSpi extends KeyPairGenerato
             boolean needGenerate = false;
             // Keep ordinary, auth-bound, device-ID and explicit attestation-key generation native.
             // ML-DSA and Curve25519 are Android 17 additions unsupported by this Axion renderer.
-            if (mSpec.getAttestationChallenge() != null && !mSpec.isUserAuthenticationRequired()
+            final boolean heckerCanAdaptAttestation = mSpec.getAttestationChallenge() != null && !mSpec.isUserAuthenticationRequired()
                     && !mSpec.isCriticalToDeviceEncryption() && mSpec.getAttestationIds().length == 0
                     && mSpec.getAttestKeyAlias() == null && descriptor.domain == Domain.APP
                     && (mKeymasterAlgorithm == KeymasterDefs.KM_ALGORITHM_RSA
                     || (mKeymasterAlgorithm == KeymasterDefs.KM_ALGORITHM_EC
                     && !isCurve25519(mEcCurveName)))
                     && !"TrickyStoreTeeCheck".equals(mEntryAlias) && 
-                !"trickystore_attestation_key".equals(mEntryAlias)) {
+                !"trickystore_attestation_key".equals(mEntryAlias);
+            String[] heckerAttestationPackages = null;
+            if (heckerCanAdaptAttestation) {
                 try {
                     String[] packages = ActivityThread.getPackageManager().getPackagesForUid(Process.myUid());
+                    heckerAttestationPackages = packages;
                     if (TrickyStoreService.getInstance()
                             .needGenerate(Process.myUid(), packages)) {
                         needGenerate = true;
@@ -843,8 +846,21 @@ public abstract class AndroidKeyStoreKeyPairGeneratorSpi extends KeyPairGenerato
                 }
             }
 
+            if (!needGenerate) {
+                try {
+                    metadata = iSecurityLevel.generateKey(descriptor, mAttestKeyDescriptor,
+                            constructKeyGenerationArguments(), flags, additionalEntropy);
+                } catch (android.security.KeyStoreException failure) {
+                    if (!heckerCanAdaptAttestation || !TrickyStoreService.getInstance()
+                            .generateAfterAttestationFailure(Process.myUid(), heckerAttestationPackages,
+                                    failure.getErrorCode())) throw failure;
+                    needGenerate = true;
+                    Log.w(TAG, "Targeted attestation unavailable; using the configured keybox fallback");
+                }
+            }
+
             if (needGenerate) {
-                Log.i(TAG, "Generating software key for " + mEntryAlias);
+                Log.i(TAG, "Generating key with configured attestation compatibility");
                 
                 CertificateGenerator.KeyGenParameters params = new CertificateGenerator.KeyGenParameters();
                 params.keySize = mKeySizeBits;
@@ -900,12 +916,16 @@ public abstract class AndroidKeyStoreKeyPairGeneratorSpi extends KeyPairGenerato
                 List<Certificate> chain = 
                     CertificateGenerator.generateCertificateChain(kp, params, securityLevel, callingUid);
                     
-                if (chain == null) throw new ProviderException("Failed to generate software certificate chain");
+                if (chain == null || chain.isEmpty()) throw new ProviderException("Failed to generate software certificate chain");
 
                 byte[] keyBytes = kp.getPrivate().getEncoded();
                 
-                metadata = iSecurityLevel.importKey(descriptor, null,
-                         constructKeyImportArguments(), flags, keyBytes);
+                try {
+                    metadata = iSecurityLevel.importKey(descriptor, null,
+                            constructKeyImportArguments(), flags, keyBytes);
+                } finally {
+                    java.util.Arrays.fill(keyBytes, (byte) 0);
+                }
                          
                 byte[] userCert = null;
                 byte[] chainBytes = null;
@@ -925,9 +945,6 @@ public abstract class AndroidKeyStoreKeyPairGeneratorSpi extends KeyPairGenerato
                 metadata.certificate = userCert;
                 metadata.certificateChain = chainBytes;
                 
-            } else {
-                 metadata = iSecurityLevel.generateKey(descriptor, mAttestKeyDescriptor,
-                        constructKeyGenerationArguments(), flags, additionalEntropy);
             }
 
 

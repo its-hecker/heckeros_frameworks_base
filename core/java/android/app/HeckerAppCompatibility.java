@@ -57,6 +57,12 @@ public final class HeckerAppCompatibility {
         } catch (LinkageError | RuntimeException unavailable) {
             if (hideRom) Log.w("HeckerAppCompatibility", "ROM compatibility unavailable", unavailable);
         }
+        try {
+            nativeConfigureAppPrivacy(sFlags);
+        } catch (LinkageError | RuntimeException unavailable) {
+            if ((sFlags & HIDE_DEVELOPER_OPTIONS) != 0)
+                Log.w("HeckerAppCompatibility", "Native debugging privacy unavailable", unavailable);
+        }
         // A child of an app zygote inherits its already-private property mappings.
         if ((sFlags & SPOOF_BOOTLOADER) != 0 && !sBootPropertiesApplied) {
             try {
@@ -70,6 +76,11 @@ public final class HeckerAppCompatibility {
         }
     }
 
+    /** The current app opted into boot-state compatibility; core UIDs are excluded at bind. */
+    public static boolean isBootloaderCompatibilityEnabled() {
+        return (sFlags & SPOOF_BOOTLOADER) != 0 && sUserId >= 0;
+    }
+
     /** Runs before Settings' value cache; never writes a real setting. */
     public static String settingOverride(String table, String name, int queryUserId) {
         if ((sFlags & HIDE_DEVELOPER_OPTIONS) == 0 || queryUserId != sUserId) return null;
@@ -78,6 +89,7 @@ public final class HeckerAppCompatibility {
                 || "adb_wifi_enabled".equals(name) ? "0" : null;
     }
 
+    private static native boolean nativeConfigureAppPrivacy(int flags);
     private static native boolean nativeApplyBootProperties();
     private static native boolean nativeConfigureRomHide(boolean enabled);
 }

@@ -53,6 +53,7 @@
 #include <unordered_map>
 #include <vector>
 extern "C" bool __libc_hecker_set_rom_hide(bool enabled) __attribute__((weak));
+extern "C" bool __libc_hecker_set_compatibility_flags(unsigned flags) __attribute__((weak));
 #endif
 
 namespace android {
@@ -800,6 +801,16 @@ jboolean HeckerAppCompatibility_nativeApplyBootProperties(JNIEnv*, jclass) {
     return JNI_FALSE;
 #endif
 }
+jboolean HeckerAppCompatibility_nativeConfigureAppPrivacy(JNIEnv*, jclass, jint flags) {
+#if defined(__BIONIC__)
+    if (getuid() % 100000 < 10000 || __libc_hecker_set_compatibility_flags == nullptr)
+        return JNI_FALSE;
+    return __libc_hecker_set_compatibility_flags(static_cast<unsigned>(flags)) ? JNI_TRUE : JNI_FALSE;
+#else
+    (void)flags;
+    return JNI_FALSE;
+#endif
+}
 jboolean HeckerAppCompatibility_nativeConfigureRomHide(JNIEnv*, jclass, jboolean enabled) {
 #if defined(__BIONIC__)
     if (getuid() % 100000 < 10000 || __libc_hecker_set_rom_hide == nullptr) return JNI_FALSE;
@@ -857,6 +868,8 @@ int register_android_os_SystemProperties(JNIEnv *env)
         env->ExceptionClear();
     }
     const JNINativeMethod compatibility_methods[] = {
+        { "nativeConfigureAppPrivacy", "(I)Z",
+          (void*) HeckerAppCompatibility_nativeConfigureAppPrivacy },
         { "nativeConfigureRomHide", "(Z)Z",
           (void*) HeckerAppCompatibility_nativeConfigureRomHide },
         { "nativeApplyBootProperties", "()Z",

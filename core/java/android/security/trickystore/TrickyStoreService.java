@@ -23,9 +23,11 @@
 package android.security.trickystore;
 
 import android.app.ActivityManager;
+import android.app.HeckerAppCompatibility;
 import android.app.IActivityManager;
 import android.os.RemoteException;
 import android.os.Process;
+import android.hardware.security.keymint.ErrorCode;
 import android.os.SystemClock;
 import android.security.keystore.KeyGenParameterSpec;
 import android.security.keystore.KeyProperties;
@@ -589,7 +591,7 @@ public class TrickyStoreService {
     private boolean isTeeStatusFresh() {
         Boolean cached = mTeeBroken;
         return cached != null && (!cached
-                || System.currentTimeMillis() - mTeeCheckedAtMs < TEE_RECHECK_COOLDOWN_MS);
+                || SystemClock.elapsedRealtime() - mTeeCheckedAtMs < TEE_RECHECK_COOLDOWN_MS);
     }
 
     private void ensureTeeStatus() {
@@ -598,7 +600,7 @@ public class TrickyStoreService {
             if (isTeeStatusFresh()) return;
             boolean broken = checkTeeBroken();
             mTeeBroken = broken;
-            mTeeCheckedAtMs = System.currentTimeMillis();
+            mTeeCheckedAtMs = SystemClock.elapsedRealtime();
             AttestationUtils.setTeeBroken(broken);
         }
     }
@@ -763,12 +765,44 @@ public class TrickyStoreService {
         }
     }
 
+    private Mode modeForPackage(String pkg) {
+        Mode configured = mPackageModes.get(pkg);
+        // An explicit skip always wins. The per-app bootloader option also
+        // reaches attestation when the existing private keybox backend is ready.
+        return configured != null ? configured
+                : HeckerAppCompatibility.isBootloaderCompatibilityEnabled() ? Mode.AUTO : Mode.SKIP;
+    }
+
+    /** Narrow recovery for a targeted ordinary attestation that the HAL could not create. */
+    public boolean generateAfterAttestationFailure(int callingUid, String[] packages, int error) {
+        if (callingUid != Process.myUid() || callingUid % 100000 < 10000 || packages == null)
+            return false;
+        // -10003 is the vendor error in the Coral report. The standard errors
+        // cover unavailable provisioning/configuration/hardware, not invalid inputs.
+        if (error != -10003 && error != ErrorCode.ATTESTATION_KEYS_NOT_PROVISIONED
+                && error != ErrorCode.KEYMINT_NOT_CONFIGURED
+                && error != ErrorCode.HARDWARE_TYPE_UNAVAILABLE) return false;
+        maybeRefreshTargets();
+        boolean selected = false;
+        for (String pkg : packages) {
+            if (XPOSED_PACKAGES.contains(pkg)) continue;
+            Mode mode = modeForPackage(pkg);
+            if (mode == Mode.AUTO || mode == Mode.LEAF_HACK) { selected = true; break; }
+        }
+        if (!selected || !hasKeyboxes()) return false;
+        // This is an availability observation, not a diagnosis of damaged hardware.
+        mTeeBroken = true;
+        mTeeCheckedAtMs = SystemClock.elapsedRealtime();
+        AttestationUtils.setTeeBroken(true);
+        return true;
+    }
+
     public boolean needHack(int callingUid, String[] packages) {
         if (packages == null) return false;
         maybeRefreshTargets();
         for (String pkg : packages) {
             if (XPOSED_PACKAGES.contains(pkg)) continue;
-            Mode mode = mPackageModes.get(pkg);
+            Mode mode = modeForPackage(pkg);
             if (mode == Mode.SKIP) continue;
             if (mode == Mode.LEAF_HACK) return true;
             // Only AUTO needs to know the TEE state. Probing it costs a real
@@ -783,7 +817,7 @@ public class TrickyStoreService {
         maybeRefreshTargets();
         for (String pkg : packages) {
             if (XPOSED_PACKAGES.contains(pkg)) continue;
-            Mode mode = mPackageModes.get(pkg);
+            Mode mode = modeForPackage(pkg);
             if (mode == Mode.SKIP) continue;
             if (mode == Mode.GENERATE) return hasKeyboxes();
             if (mode == Mode.AUTO && hasKeyboxes() && isTeeBroken()) return true;

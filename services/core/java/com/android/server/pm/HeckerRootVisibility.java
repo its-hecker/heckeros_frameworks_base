@@ -2,6 +2,7 @@
 package com.android.server.pm;
 
 import android.content.Context;
+import android.content.pm.SigningDetails;
 import android.database.ContentObserver;
 import android.net.Uri;
 import android.os.Binder;
@@ -19,6 +20,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.WeakHashMap;
 
 /** Per-user opt-in privacy. Query paths do no I/O or PackageManager Binder calls. */
 public final class HeckerRootVisibility {
@@ -26,6 +28,10 @@ public final class HeckerRootVisibility {
     private static final Set<String> MANAGERS = Set.of(
             "com.topjohnwu.magisk",
             "com.rifsxd.ksunext",
+            "com.sukisu.ultra",
+            "com.resukisu.resukisu",
+            "io.github.a13e300.ksuwebui",
+            "com.termux",
             "io.github.lsposed.manager",
             "io.github.vvb2060.magisk",
             "eu.chainfire.supersu",
@@ -62,6 +68,32 @@ public final class HeckerRootVisibility {
             "com.ramdroid.appquarantinepro",
             "com.zachspong.temprootremovejb"
     );
+
+    // KernelSU-Next kernel/Kbuild publishes the SHA-256 of its manager signer.
+    // APK-verified SigningDetails supports renamed packages and verified signer
+    // rotation without trusting an app label, library filename or package prefix.
+    private static final byte[] KSU_NEXT_SIGNER = decodeDigest(
+            "79e590113c4c4c0c222978e413a5faa801666957b1212a328e46c00c69821bf7");
+    private static final Map<SigningDetails, Boolean> MANAGER_SIGNERS =
+            Collections.synchronizedMap(new WeakHashMap<>());
+
+    private static byte[] decodeDigest(String text) {
+        byte[] result = new byte[text.length() / 2];
+        for (int i = 0; i < result.length; i++)
+            result[i] = (byte) Integer.parseInt(text.substring(2 * i, 2 * i + 2), 16);
+        return result;
+    }
+
+    private static boolean isManager(PackageStateInternal target) {
+        if (MANAGERS.contains(target.getPackageName())) return true;
+        SigningDetails signing = target.getSigningDetails();
+        if (signing == null || signing == SigningDetails.UNKNOWN) return false;
+        Boolean known = MANAGER_SIGNERS.get(signing);
+        if (known != null) return known;
+        boolean manager = signing.hasSha256Certificate(KSU_NEXT_SIGNER);
+        MANAGER_SIGNERS.put(signing, manager);
+        return manager;
+    }
 
     private static final Set<String> ROM_PACKAGES_EXACT = Set.of(
             "lineageos.platform", "org.hecker.suite", "org.hecker.netlab", "org.hecker.vpn", "org.hecker.librepods"
@@ -170,7 +202,7 @@ public final class HeckerRootVisibility {
         if (appId < Process.FIRST_APPLICATION_UID || target == null
                 || appId == target.getAppId())
             return false;
-        boolean manager = MANAGERS.contains(target.getPackageName());
+        boolean manager = isManager(target);
         boolean romComponent = isRomPackage(target.getPackageName());
         if (!manager && !romComponent) return false;
         Set<String> selected = sTargets.get(UserHandle.getUserId(callingUid));

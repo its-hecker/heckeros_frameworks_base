@@ -241,8 +241,27 @@ public final class SpoofingConfigTest {
         Binder.uid=10002;
         check(tricky.needHack(10002,new String[]{"com.check.beta"}),"explicit leaf replacement mode");
         check(!tricky.needGenerate(10002,new String[]{"com.check.beta"}),"leaf mode does not generate");
+        check(!tricky.generateAfterAttestationFailure(10001,new String[]{"com.check.beta"},-10003),"UID argument cannot cross the process boundary");
+        for(int error:new int[]{-38,-63,-65,-66,-26,0})
+            check(!tricky.generateAfterAttestationFailure(10002,new String[]{"com.check.beta"},error),"input/auth errors stay native: "+error);
+        check(tricky.generateAfterAttestationFailure(10002,new String[]{"com.check.beta"},-10003),"targeted leaf mode recovers the reported vendor failure");
+        check(!tricky.generateAfterAttestationFailure(10002,new String[]{"com.other.app"},-10003),"unknown package stays native");
+        check(!tricky.generateAfterAttestationFailure(10002,null,-10003),"missing package attribution stays native");
         Binder.uid=10003;
         check(!tricky.hasKeyboxes(),"unselected process cannot retain another caller's keybox");
+        check(!tricky.generateAfterAttestationFailure(10003,new String[]{"com.other.app"},-10003),"missing private key cannot fabricate a fallback");
+        Binder.uid=1000;
+        com.android.server.pm.HeckerRootVisibility.flags.put("com.game.alpha",8);
+        store.put(HeckerSpoofConfig.TARGETS,"com.check.beta?");
+        Binder.uid=10001;android.app.HeckerAppCompatibility.bootloader=true;tricky.initialize();
+        check(store.getForCaller(2).contains("AUTO")&&store.getForCaller(3).equals(xml),"server-authorized per-app bootloader option receives a scoped backend");
+        for(int error:new int[]{-10003,-74,-64,-68})
+            check(tricky.generateAfterAttestationFailure(10001,new String[]{"com.game.alpha"},error),"configured fallback handles unavailable attestation: "+error);
+        Binder.uid=1000;store.put(HeckerSpoofConfig.TARGETS,"com.game.alpha-");
+        Binder.uid=10001;tricky.initialize();
+        check(!tricky.generateAfterAttestationFailure(10001,new String[]{"com.game.alpha"},-10003),"explicit SKIP overrides per-app compatibility");
+        check(!tricky.needHack(10001,new String[]{"com.game.alpha"})&&!tricky.needGenerate(10001,new String[]{"com.game.alpha"}),"SKIP remains native after a cached availability failure");
+        com.android.server.pm.HeckerRootVisibility.flags.clear();android.app.HeckerAppCompatibility.bootloader=false;
         Binder.uid=1000;
         store.put(HeckerSpoofConfig.OPTIONS,"{\"trickystore_enabled\":false}");
         Binder.uid=10001;

@@ -28,7 +28,7 @@ def main():
     stubs['android/util/Pair.java'] = '''package android.util;
 public class Pair<A,B>{public final A first;public final B second;public Pair(A a,B b){first=a;second=b;}}'''
     stubs['com/android/server/pm/pkg/PackageStateInternal.java'] = '''package com.android.server.pm.pkg;
-public interface PackageStateInternal {int getAppId();String getPackageName();
+public interface PackageStateInternal {int getAppId();String getPackageName(); default android.content.pm.SigningDetails getSigningDetails(){return android.content.pm.SigningDetails.UNKNOWN;}
  default boolean isSystem(){return false;}default boolean isPrivileged(){return false;}
  default boolean hasSharedUser(){return false;}default int getSharedUserAppId(){return 0;}}'''
     stubs['com/android/server/pm/pkg/SharedUserApi.java'] = '''package com.android.server.pm.pkg;

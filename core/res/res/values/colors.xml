@@ -973,9 +973,10 @@
     <color name="side_fps_button_color">#00677E</color>
 
     <!-- Color for various surfaces related to system-wide blur -->
-    <color name="shade_panel_fg">@color/shade_panel_fg_color</color>
-    <color name="shade_panel_bg">@color/shade_panel_bg_color</color>
-    <color name="shade_panel_scrim">@color/shade_panel_scrim_color</color>
+    <!-- HeckerOS: native blur/backplates own the surface; avoid a second tinted band. -->
+    <color name="shade_panel_fg">@android:color/transparent</color>
+    <color name="shade_panel_bg">@android:color/transparent</color>
+    <color name="shade_panel_scrim">@android:color/transparent</color>
 
     <!-- Color for system bars -->
     <color name="navigation_bar_compatible">@android:color/black</color>

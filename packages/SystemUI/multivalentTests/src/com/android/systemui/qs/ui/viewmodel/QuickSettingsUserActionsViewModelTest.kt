@@ -74,10 +74,11 @@ class QuickSettingsUserActionsViewModelTest : SysuiTestCase() {
     }
 
     @Test
-    fun destinations_whenNotCustomizing_unlocked() =
+    fun destinations_whenNotCustomizing_withPreviousSceneShade_unlocked() =
         kosmos.runTest {
             enableSingleShade()
             val actions by collectLastValue(underTest.actions)
+            val backScene by collectLastValue(sceneBackInteractor.backScene)
             val homeScene by collectLastValue(homeSceneFamilyResolver.resolvedScene)
             editModeViewModel.stopEditing()
             fakeAuthenticationRepository.setAuthenticationMethod(AuthenticationMethodModel.Pin)
@@ -85,12 +86,15 @@ class QuickSettingsUserActionsViewModelTest : SysuiTestCase() {
                 unlockStateInt = BiometricUnlockController.MODE_DISMISS,
                 biometricUnlockSource = BiometricUnlockSource.FINGERPRINT_SENSOR,
             )
+            sceneInteractor.changeScene(Scenes.Shade, "open shade")
+            sceneInteractor.changeScene(Scenes.QuickSettings, "expand quick settings")
 
+            assertThat(backScene).isEqualTo(Scenes.Shade)
             assertThat(actions)
                 .isEqualTo(
                     mapOf(
                         Back to Scenes.Shade,
-                        Swipe.Up to Scenes.Shade,
+                        Swipe.Up to SceneFamilies.Home,
                         Swipe.Up(fromSource = Edge.Bottom) to SceneFamilies.Home,
                     )
                 )
@@ -116,7 +120,7 @@ class QuickSettingsUserActionsViewModelTest : SysuiTestCase() {
                 .isEqualTo(
                     mapOf(
                         Back to Scenes.Lockscreen,
-                        Swipe.Up to Scenes.Lockscreen,
+                        Swipe.Up to SceneFamilies.Home,
                         Swipe.Up(fromSource = Edge.Bottom) to SceneFamilies.Home,
                     )
                 )
@@ -144,7 +148,7 @@ class QuickSettingsUserActionsViewModelTest : SysuiTestCase() {
                 .isEqualTo(
                     mapOf(
                         Back to Scenes.Shade,
-                        Swipe.Up to Scenes.Shade,
+                        Swipe.Up to SceneFamilies.Home,
                         Swipe.Up(fromSource = Edge.Bottom) to SceneFamilies.Home,
                     )
                 )
@@ -165,7 +169,7 @@ class QuickSettingsUserActionsViewModelTest : SysuiTestCase() {
                 .isEqualTo(
                     mapOf(
                         Back to Scenes.Shade,
-                        Swipe.Up to Scenes.Shade,
+                        Swipe.Up to SceneFamilies.Home,
                         Swipe.Up(fromSource = Edge.Bottom) to SceneFamilies.Home,
                     )
                 )
@@ -201,7 +205,7 @@ class QuickSettingsUserActionsViewModelTest : SysuiTestCase() {
                 .isEqualTo(
                     mapOf(
                         Back to Scenes.Shade,
-                        Swipe.Up to Scenes.Shade,
+                        Swipe.Up to SceneFamilies.Home,
                         Swipe.Up(fromSource = Edge.Bottom) to SceneFamilies.Home,
                     )
                 )

@@ -59,7 +59,7 @@ constructor(
                     // Disable "back" and "swipe up to dismiss" gestures while customizing.
                     if (!isCustomizing) {
                         put(Back, UserActionResult(backScene))
-                        put(Swipe.Up, UserActionResult(backScene))
+                        put(Swipe.Up, UserActionResult(SceneFamilies.Home))
                     }
                     put(Swipe.Up(fromSource = Edge.Bottom), UserActionResult(SceneFamilies.Home))
                 }

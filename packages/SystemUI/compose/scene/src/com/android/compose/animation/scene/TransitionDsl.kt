@@ -146,6 +146,9 @@ interface TransitionBuilder : BaseTransitionBuilder {
      */
     var spec: AnimationSpec<Float>?
 
+    /** Whether a committed swipe settles using the theme's fast spatial animation. */
+    var useFastSwipeSettle: Boolean
+
     /**
      * Hints at the intrinsic, "design intent" direction of the transition.
      *

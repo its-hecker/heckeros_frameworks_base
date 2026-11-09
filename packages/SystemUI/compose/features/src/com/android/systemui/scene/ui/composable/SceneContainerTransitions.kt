@@ -250,6 +250,7 @@ class SceneContainerTransitions : SceneContainerTransitionsBuilder {
                 cujTag = TAG_COLLAPSE,
             ) {
                 reversed { goneToQuickSettingsTransition() }
+                useFastSwipeSettle = true
             }
             from(
                 Scenes.QuickSettings,
@@ -258,6 +259,7 @@ class SceneContainerTransitions : SceneContainerTransitionsBuilder {
                 cujTag = TAG_COLLAPSE,
             ) {
                 reversed { lockscreenToQuickSettingsSceneTransition() }
+                useFastSwipeSettle = true
             }
             from(
                 Scenes.QuickSettings,

@@ -457,12 +457,22 @@ internal class SwipeAnimation<T : ContentKey>(
 
         val velocityConsumed = CompletableDeferred<Float>()
         offsetAnimationRunnable.complete {
+            val settleSpec: AnimationSpec<Float> =
+                spec
+                    ?: if (
+                        targetContent == toContent &&
+                            contentTransition.transformationSpec.useFastSwipeSettle
+                    ) {
+                        layoutState.motionScheme.fastSpatialSpec()
+                    } else {
+                        layoutState.motionScheme.slowSpatialSpec()
+                    }
             val animationResult =
                 animatable.animateToScrollOffsetTarget(
                     targetOffset,
                     initialVelocity,
                     decayAnimationSpec,
-                    spec ?: layoutState.motionScheme.slowSpatialSpec(),
+                    settleSpec,
                 )
 
             val consumed = initialVelocity - animationResult.endState.velocity

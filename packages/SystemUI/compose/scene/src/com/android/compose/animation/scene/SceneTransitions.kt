@@ -259,6 +259,7 @@ internal class TransitionSpecImpl(
                             )
                         },
                     isReversed = !reverse.isReversed,
+                    useFastSwipeSettle = reverse.useFastSwipeSettle,
                 )
             },
         )
@@ -288,6 +289,7 @@ internal class TransformationSpecImpl(
     override val intrinsicDirection: SwipeDirection?,
     override val transformationMatchers: List<TransformationMatcher>,
     val isReversed: Boolean = false,
+    val useFastSwipeSettle: Boolean = false,
 ) : TransformationSpec {
     private val cache = mutableMapOf<ElementKey, MutableMap<ContentKey, ElementTransformations?>>()
 

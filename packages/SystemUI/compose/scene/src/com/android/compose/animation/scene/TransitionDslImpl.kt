@@ -145,6 +145,7 @@ private class SceneTransitionsBuilderImpl : SceneTransitionsBuilder {
             distance = impl.distance,
             intrinsicDirection = impl.intrinsicDirection,
             transformationMatchers = impl.transformationMatchers,
+            useFastSwipeSettle = impl.useFastSwipeSettle,
         )
     }
 }
@@ -232,6 +233,7 @@ internal abstract class BaseTransitionBuilderImpl : BaseTransitionBuilder {
 internal class TransitionBuilderImpl(override val transition: TransitionState.Transition) :
     BaseTransitionBuilderImpl(), TransitionBuilder {
     override var spec: AnimationSpec<Float>? = null
+    override var useFastSwipeSettle: Boolean = false
     override var distance: UserActionDistance? = null
     override var cuj: Int? = null
     override var cujTag: String? = null

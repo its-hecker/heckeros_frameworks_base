@@ -16,7 +16,6 @@
 
 package com.android.systemui.window.ui
 
-import android.util.Log
 import android.view.Choreographer
 import android.view.View
 import androidx.annotation.MainThread
@@ -104,15 +103,15 @@ class DefaultBlurChoreographer(
     override fun applyBlur(blurEffect: BlurEffect) {
         Assert.isMainThread()
         val newBlurRadius = blurEffect.radius.toInt()
-        // Expectation is that we schedule only one frame callback per frame
+        // Expansion, media and scene transitions can publish multiple intermediate
+        // requests within one vsync. The last *visible* request wins. Avoid logging
+        // one warning per intermediate value or rescheduling pixel-equivalent blurs.
         if (wasUpdateScheduledForThisFrame) {
-            // Update this value so that the frame callback picks up this value when it runs
-            if (lastScheduledBlurEffect != blurEffect) {
-                Log.w(TAG, "Multiple blur values emitted in the same frame")
+            if (!sameVisibleEffect(lastScheduledBlurEffect, blurEffect)) {
+                lastScheduledBlurEffect = blurEffect
             }
-            lastScheduledBlurEffect = blurEffect
             return
-        } else if (lastScheduledBlurEffect == blurEffect) {
+        } else if (sameVisibleEffect(lastScheduledBlurEffect, blurEffect)) {
             logger.logSkipApplyBlur(
                 blurEffect,
                 wasUpdateScheduledForThisFrame,
@@ -127,6 +126,9 @@ class DefaultBlurChoreographer(
         choreographer.postFrameCallback(newFrameCallback)
     }
 
+    private fun sameVisibleEffect(first: BlurEffect, second: BlurEffect): Boolean =
+        first.radius.toInt() == second.radius.toInt() && first.scale == second.scale
+
     override fun setPersistentEarlyWakeup(persistentEarlyWakeup: Boolean) {
         blurUtils.setPersistentEarlyWakeup(persistentEarlyWakeup, rootView.viewRootImpl)
     }
@@ -139,9 +141,6 @@ class DefaultBlurChoreographer(
         blurAppliedListener = null
     }
 
-    private companion object {
-        private const val TAG = "BlurChoreographer"
-    }
 }
 
 @Module

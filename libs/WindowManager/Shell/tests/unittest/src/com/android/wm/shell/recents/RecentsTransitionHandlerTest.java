@@ -522,6 +522,30 @@ public class RecentsTransitionHandlerTest extends ShellTestCase {
     }
 
     @Test
+    public void testFinish_returningToApp_restoresTaskSurfaceAlpha() {
+        // Recents must restore the real task surface after returning from a canceled
+        // predictive-back gesture, even if the shell had changed its transparency.
+        ActivityManager.RunningTaskInfo appTask = new TestRunningTaskInfoBuilder().build();
+        TransitionInfo transitionInfo = new TransitionInfoBuilder(TRANSIT_CLOSE)
+                .addChange(TRANSIT_CLOSE, appTask)
+                .build();
+        SurfaceControl taskSurface = transitionInfo.getChanges().get(0).getLeash();
+        final IBinder transition = startRecentsTransition(/* synthetic= */ false);
+        SurfaceControl.Transaction finishT = mock(SurfaceControl.Transaction.class);
+        mRecentsTransitionHandler.setFinishTransactionSupplier(() -> finishT);
+        mRecentsTransitionHandler.startAnimation(
+                transition, transitionInfo, new StubTransaction(),
+                new StubTransaction(), mock(Transitions.TransitionFinishCallback.class));
+
+        mRecentsTransitionHandler.findController(transition).finish(/* toHome= */ false,
+                false /* sendUserLeaveHint */, mock(IResultReceiver.class));
+        mMainExecutor.flushAll();
+
+        verify(finishT).show(taskSurface);
+        verify(finishT).setAlpha(taskSurface, 1f);
+    }
+
+    @Test
     public void testFinish_returningToFreeformTasks_setsCornerRadius() {
         ActivityManager.RunningTaskInfo freeformTask =
                 new TestRunningTaskInfoBuilder().setWindowingMode(WINDOWING_MODE_FREEFORM).build();

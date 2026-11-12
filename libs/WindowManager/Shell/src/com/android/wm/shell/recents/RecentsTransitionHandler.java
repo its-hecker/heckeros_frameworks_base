@@ -1762,6 +1762,11 @@ public class RecentsTransitionHandler implements Transitions.TransitionHandler,
                             "  reorder task#%d to top", taskState.mTaskInfo.taskId);
                     wct.reorder(taskState.mToken, true /* onTop */);
                     t.show(taskState.mTaskSurface);
+                    // A canceled predictive Back followed by Recents may leave a transient
+                    // alpha on the returning task. Restoring its visible surface must
+                    // also restore full opacity; focus and task reordering alone do not
+                    // guarantee that the app can draw visibly on re-entry.
+                    t.setAlpha(taskState.mTaskSurface, 1f);
                 }
                 setCornerRadiusForFreeformTasks(mRecentTasksController.getContext(), t,
                         tasksToShowFrontToBack);

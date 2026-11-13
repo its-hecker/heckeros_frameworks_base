@@ -25,6 +25,7 @@ import android.annotation.Nullable;
 import android.graphics.FontListParser;
 import android.graphics.Typeface;
 import android.os.LocaleList;
+import android.os.SystemProperties;
 import android.ravenwood.annotation.RavenwoodReplace;
 import android.text.FontConfig;
 import android.util.ArrayMap;
@@ -63,6 +64,11 @@ public final class SystemFonts {
     /** @hide */
     public static final String SYSTEM_FONT_DIR = getSystemFontDir();
     private static final String OEM_XML = "/product/etc/fonts_customization.xml";
+    // Separate from the boot-critical Pixel/Hecker fonts_customization.xml.
+    private static final String EMOJI_PROP = "persist.sys.ax_emoji_style";
+    private static final String EMOJI_ETC = "/product/etc/fonts_customization_emoji_";
+    private static final String EMOJI_FONT_DIR = "/product/fonts/";
+
     /** @hide */
     public static final String OEM_FONT_DIR = "/product/fonts/";
 
@@ -352,7 +358,7 @@ public final class SystemFonts {
             long lastModifiedDate,
             int configVersion
     ) {
-        return getSystemFontConfigInternal(FONTS_XML, SYSTEM_FONT_DIR, OEM_XML, OEM_FONT_DIR,
+        return getSystemFontConfigInternal(FONTS_XML, SYSTEM_FONT_DIR, OEM_XML, getEmojiCustomizationXml(), OEM_FONT_DIR,
                 updatableFontMap, lastModifiedDate, configVersion);
     }
 
@@ -368,7 +374,7 @@ public final class SystemFonts {
             long lastModifiedDate,
             int configVersion
     ) {
-        return getSystemFontConfigInternal(fontsXml, SYSTEM_FONT_DIR, OEM_XML, OEM_FONT_DIR,
+        return getSystemFontConfigInternal(fontsXml, SYSTEM_FONT_DIR, OEM_XML, getEmojiCustomizationXml(), OEM_FONT_DIR,
                 updatableFontMap, lastModifiedDate, configVersion);
     }
 
@@ -377,7 +383,7 @@ public final class SystemFonts {
      * @hide
      */
     public static @NonNull FontConfig getSystemPreinstalledFontConfig() {
-        return getSystemFontConfigInternal(FONTS_XML, SYSTEM_FONT_DIR, OEM_XML, OEM_FONT_DIR, null,
+        return getSystemFontConfigInternal(FONTS_XML, SYSTEM_FONT_DIR, OEM_XML, getEmojiCustomizationXml(), OEM_FONT_DIR, null,
                 0, 0);
     }
 
@@ -385,7 +391,7 @@ public final class SystemFonts {
      * @hide
      */
     public static @NonNull FontConfig getSystemPreinstalledFontConfigFromLegacyXml() {
-        return getSystemFontConfigInternal(LEGACY_FONTS_XML, SYSTEM_FONT_DIR, OEM_XML, OEM_FONT_DIR,
+        return getSystemFontConfigInternal(LEGACY_FONTS_XML, SYSTEM_FONT_DIR, OEM_XML, getEmojiCustomizationXml(), OEM_FONT_DIR,
                 null, 0, 0);
     }
 
@@ -393,6 +399,7 @@ public final class SystemFonts {
             @NonNull String fontsXml,
             @NonNull String systemFontDir,
             @Nullable String oemXml,
+            @Nullable String emojiXml,
             @Nullable String productFontDir,
             @Nullable Map<String, File> updatableFontMap,
             long lastModifiedDate,
@@ -400,8 +407,11 @@ public final class SystemFonts {
     ) {
         try {
             Log.i(TAG, "Loading font config from " + fontsXml);
-            return FontListParser.parse(fontsXml, systemFontDir, oemXml, productFontDir,
-                                                updatableFontMap, lastModifiedDate, configVersion);
+            final List<String> layers = new ArrayList<>();
+            if (oemXml != null) layers.add(oemXml);
+            if (emojiXml != null) layers.add(emojiXml);
+            return FontListParser.parse(fontsXml, systemFontDir, layers, productFontDir,
+                    updatableFontMap, lastModifiedDate, configVersion);
         } catch (IOException e) {
             Log.e(TAG, "Failed to open/read system font configurations.", e);
             return new FontConfig(Collections.emptyList(), Collections.emptyList(),
@@ -411,6 +421,25 @@ public final class SystemFonts {
             return new FontConfig(Collections.emptyList(), Collections.emptyList(),
                     Collections.emptyList(), Collections.emptyList(), 0, 0);
         }
+    }
+
+    /**
+     * The four optional emoji packs must be explicitly bundled. Never attempt to parse an
+     * overlay whose font is missing; malformed font configurations can prevent Zygote boot.
+     */
+    private static @Nullable String getEmojiCustomizationXml() {
+        final String name = SystemProperties.get(EMOJI_PROP, "android");
+        final String font;
+        switch (name) {
+            case "ios": font = "LunarisIosEmoji.ttf"; break;
+            case "samsung": font = "SamsungColorEmoji.ttf"; break;
+            case "swiftui": font = "SwiftUIEmoji.ttf"; break;
+            case "facebook": font = "FacebookEmoji.ttf"; break;
+            default: return null;
+        }
+        final String xml = EMOJI_ETC + name + ".xml";
+        return new File(xml).isFile() && new File(EMOJI_FONT_DIR + font).isFile()
+                ? xml : null;
     }
 
     /**

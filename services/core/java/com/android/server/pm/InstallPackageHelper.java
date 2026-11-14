@@ -1931,6 +1931,11 @@ final class InstallPackageHelper {
                 }
             }
 
+            // The early signing-check shared user is scoped to the block above.
+            // Re-resolve it for permission ownership validation below.
+            final SharedUserSetting signaturePermissionSharedUser = signatureCheckPs == null
+                    ? null : mPm.mSettings.getSharedUserSettingLPr(signatureCheckPs);
+
             if (ps != null) {
                 if (DEBUG_INSTALL) Slog.d(TAG, "Existing package: " + ps);
 
@@ -1954,7 +1959,7 @@ final class InstallPackageHelper {
                             && !doesSignatureMatchForPermissions(sourcePackageName, parsedPackage,
                             scanFlags)
                             && !HeckerSignatureTestPolicy.allowOwnPermissionRedeclaration(
-                                    signatureCheckPs, signatureCheckSus, parsedPackage,
+                                    signatureCheckPs, signaturePermissionSharedUser, parsedPackage,
                                     sourcePackageName, scanFlags, parseFlags,
                                     mPm.mContext.getContentResolver())) {
                         EventLog.writeEvent(0x534e4554, "146211400", -1,
@@ -1993,7 +1998,7 @@ final class InstallPackageHelper {
                     if (!doesSignatureMatchForPermissions(sourcePackageName, parsedPackage,
                             scanFlags)
                             && !HeckerSignatureTestPolicy.allowOwnPermissionRedeclaration(
-                                    signatureCheckPs, signatureCheckSus, parsedPackage,
+                                    signatureCheckPs, signaturePermissionSharedUser, parsedPackage,
                                     sourcePackageName, scanFlags, parseFlags,
                                     mPm.mContext.getContentResolver())) {
                         // If the owning package is the system itself, we log but allow
@@ -2065,7 +2070,7 @@ final class InstallPackageHelper {
                                     && !doesSignatureMatchForPermissions(groupSourcePackageName,
                                     parsedPackage, scanFlags)
                                     && !HeckerSignatureTestPolicy.allowOwnPermissionRedeclaration(
-                                            signatureCheckPs, signatureCheckSus, parsedPackage,
+                                            signatureCheckPs, signaturePermissionSharedUser, parsedPackage,
                                             groupSourcePackageName, scanFlags, parseFlags,
                                             mPm.mContext.getContentResolver())) {
                                 EventLog.writeEvent(0x534e4554, "146211400", -1,

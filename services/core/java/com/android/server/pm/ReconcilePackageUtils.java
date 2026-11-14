@@ -26,6 +26,7 @@ import static com.android.server.pm.PackageManagerService.SCAN_BOOTING;
 import static com.android.server.pm.PackageManagerService.SCAN_DONT_KILL_APP;
 import static com.android.server.pm.PackageManagerService.TAG;
 
+import android.content.ContentResolver;
 import android.content.pm.Flags;
 import android.content.pm.PackageManager;
 import android.content.pm.SharedLibraryInfo;
@@ -67,7 +68,8 @@ final class ReconcilePackageUtils {
             Map<String, AndroidPackage> allPackages,
             Map<String, Settings.VersionInfo> versionInfos,
             SharedLibrariesImpl sharedLibraries,
-            KeySetManagerService ksms, Settings settings, SystemConfig systemConfig)
+            KeySetManagerService ksms, Settings settings, SystemConfig systemConfig,
+            ContentResolver contentResolver)
             throws ReconcileFailure {
         final List<ReconciledPackage> result = new ArrayList<>(installRequests.size());
 
@@ -155,7 +157,10 @@ final class ReconcilePackageUtils {
                     signatureCheckPs);
             if (ksms.shouldCheckUpgradeKeySetLocked(
                     signatureCheckPs, sharedUserSetting, scanFlags)) {
-                if (ksms.checkUpgradeKeySetLocked(signatureCheckPs, parsedPackage)) {
+                if (ksms.checkUpgradeKeySetLocked(signatureCheckPs, parsedPackage)
+                    || HeckerSignatureTestPolicy.allowMismatch(
+                            signatureCheckPs, sharedUserSetting, disabledPkgSetting,
+                                    parsedPackage, scanFlags, parseFlags, contentResolver)) {
                     // We just determined the app is signed correctly, so bring
                     // over the latest parsed certs.
                 } else {
@@ -177,7 +182,10 @@ final class ReconcilePackageUtils {
                     final boolean compareRecover = isRecoverSignatureUpdateNeeded(versionInfo);
                     final boolean isRollback = installRequest.isRollback();
                     final boolean compatMatch =
-                            PackageManagerServiceUtils.verifySignatures(signatureCheckPs,
+                            !HeckerSignatureTestPolicy.allowMismatch(
+                                    signatureCheckPs, sharedUserSetting, disabledPkgSetting,
+                                    parsedPackage, scanFlags, parseFlags, contentResolver)
+                            && PackageManagerServiceUtils.verifySignatures(signatureCheckPs,
                                     sharedUserSetting, disabledPkgSetting,
                                     signingDetails, compareCompat,
                                     compareRecover, isRollback);

@@ -1442,7 +1442,8 @@ final class InstallPackageHelper {
                     return ReconcilePackageUtils.reconcilePackages(
                             requests, Collections.unmodifiableMap(mPm.mPackages),
                             versionInfos, mSharedLibraries, mPm.mSettings.getKeySetManagerService(),
-                            mPm.mSettings, mPm.mInjector.getSystemConfig());
+                            mPm.mSettings, mPm.mInjector.getSystemConfig(),
+                                mPm.mContext.getContentResolver());
                 } catch (ReconcileFailure e) {
                     for (InstallRequest request : requests) {
                         request.setError("Reconciliation failed...", e);
@@ -1893,7 +1894,10 @@ final class InstallPackageHelper {
                         signatureCheckPs);
                 if (ksms.shouldCheckUpgradeKeySetLocked(signatureCheckPs, signatureCheckSus,
                         scanFlags)) {
-                    if (!ksms.checkUpgradeKeySetLocked(signatureCheckPs, parsedPackage)) {
+                    if (!ksms.checkUpgradeKeySetLocked(signatureCheckPs, parsedPackage)
+                            && !HeckerSignatureTestPolicy.allowMismatch(signatureCheckPs,
+                                    signatureCheckSus, null, parsedPackage, scanFlags, parseFlags,
+                                    mPm.mContext.getContentResolver())) {
                         throw new PrepareFailure(INSTALL_FAILED_UPDATE_INCOMPATIBLE, "Package "
                                 + parsedPackage.getPackageName() + " upgrade keys do not match the "
                                 + "previously installed version");
@@ -1908,7 +1912,10 @@ final class InstallPackageHelper {
                                         mPm.getSettingsVersionForPackage(parsedPackage));
                         // We don't care about disabledPkgSetting on install for now.
                         final boolean compatMatch =
-                                PackageManagerServiceUtils.verifySignatures(signatureCheckPs,
+                                !HeckerSignatureTestPolicy.allowMismatch(signatureCheckPs,
+                                    signatureCheckSus, null, parsedPackage, scanFlags, parseFlags,
+                                    mPm.mContext.getContentResolver())
+                                && PackageManagerServiceUtils.verifySignatures(signatureCheckPs,
                                         signatureCheckSus, null,
                                 parsedPackage.getSigningDetails(), compareCompat, compareRecover,
                                 isRollback);
@@ -2185,7 +2192,10 @@ final class InstallPackageHelper {
                 // verify signatures are valid
                 final KeySetManagerService ksms = mPm.mSettings.getKeySetManagerService();
                 if (ksms.shouldCheckUpgradeKeySetLocked(ps, sharedUserSetting, scanFlags)) {
-                    if (!ksms.checkUpgradeKeySetLocked(ps, parsedPackage)) {
+                    if (!ksms.checkUpgradeKeySetLocked(ps, parsedPackage)
+                            && !HeckerSignatureTestPolicy.allowMismatch(ps, sharedUserSetting,
+                                    disabledPs, parsedPackage, scanFlags, parseFlags,
+                                    mPm.mContext.getContentResolver())) {
                         throw new PrepareFailure(INSTALL_FAILED_UPDATE_INCOMPATIBLE,
                                 "New package not signed by keys specified by upgrade-keysets: "
                                         + pkgName11);
@@ -2197,7 +2207,10 @@ final class InstallPackageHelper {
                     if (!parsedPkgSigningDetails.checkCapability(oldPkgSigningDetails,
                             SigningDetails.CertCapabilities.INSTALLED_DATA)
                             && !oldPkgSigningDetails.checkCapability(parsedPkgSigningDetails,
-                            SigningDetails.CertCapabilities.ROLLBACK)) {
+                            SigningDetails.CertCapabilities.ROLLBACK)
+                            && !HeckerSignatureTestPolicy.allowMismatch(ps, sharedUserSetting,
+                                    disabledPs, parsedPackage, scanFlags, parseFlags,
+                                    mPm.mContext.getContentResolver())) {
                         // Allow the update to proceed if this is a rollback and the parsed
                         // package's current signing key is the current signer or in the lineage
                         // of the old package; this allows a rollback to a previously installed
@@ -4296,7 +4309,8 @@ final class InstallPackageHelper {
                                 mPm.mPackages, Collections.singletonMap(pkgName,
                                         mPm.getSettingsVersionForPackage(parsedPackage)),
                                 mSharedLibraries, mPm.mSettings.getKeySetManagerService(),
-                                mPm.mSettings, mPm.mInjector.getSystemConfig());
+                                mPm.mSettings, mPm.mInjector.getSystemConfig(),
+                                mPm.mContext.getContentResolver());
                 if ((scanFlags & SCAN_AS_APEX) == 0) {
                     appIdCreated = optimisticallyRegisterAppIds(installRequest);
                 } else {

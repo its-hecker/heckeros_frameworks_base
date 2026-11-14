@@ -5,28 +5,29 @@ package com.android.server.pm;
 
 import android.content.ContentResolver;
 import android.content.pm.SigningDetails;
-import android.os.Build;
 import android.os.Process;
 import android.util.Slog;
+
+import org.json.JSONException;
+import org.json.JSONObject;
 
 import com.android.internal.pm.parsing.pkg.ParsedPackage;
 import com.android.internal.pm.pkg.parsing.ParsingPackageUtils;
 
 /**
- * Temporary owner-controlled package update compatibility for userdebug builds.
- * This only skips the installed-data certificate compatibility check for
- * ordinary user packages; all APKs must still be cryptographically valid.
+ * Explicit per-app test compatibility. Only the named user-installed package
+ * may bypass the installed-data certificate comparison. APKs must still carry
+ * valid cryptographic signatures; system and shared-UID apps remain protected.
  */
 final class HeckerSignatureTestPolicy {
-    private static final String KEY = "hecker_package_signature_test_mode";
+    private static final String KEY = "hecker_signature_allowed_packages";
     private HeckerSignatureTestPolicy() {}
 
     static boolean allowMismatch(PackageSetting previousPackage,
             SharedUserSetting sharedUser, PackageSetting disabledSystemPackage,
             ParsedPackage incoming, int scanFlags, int parseFlags,
             ContentResolver resolver) {
-        if (!Build.IS_DEBUGGABLE || resolver == null
-                || previousPackage == null || incoming == null) return false;
+        if (resolver == null || previousPackage == null || incoming == null) return false;
         // Never weaken system, preloaded, shared-UID, APEX or library trust.
         if (previousPackage.isSystem() || previousPackage.isUpdatedSystemApp()
                 || previousPackage.getAppId() < Process.FIRST_APPLICATION_UID
@@ -57,9 +58,13 @@ final class HeckerSignatureTestPolicy {
                 || oldSigners.checkCapability(newSigners,
                     SigningDetails.CertCapabilities.ROLLBACK)) return false;
         try {
-            if (android.provider.Settings.Global.getInt(resolver, KEY, 0) != 1) return false;
-        } catch (RuntimeException unavailable) {
-            return false; // Settings provider unavailable: fail closed.
+            final String value = android.provider.Settings.Global.getString(resolver, KEY);
+            if (value == null || value.isEmpty()
+                    || !new JSONObject(value).optBoolean(incoming.getPackageName(), false)) {
+                return false;
+            }
+        } catch (JSONException | RuntimeException unavailable) {
+            return false; // Invalid selection list or Settings provider: fail closed.
         }
         Slog.w("HeckerSignatureTest", "Allowing test signature-mismatch update of "
                 + incoming.getPackageName());

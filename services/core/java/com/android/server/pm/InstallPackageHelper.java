@@ -1931,11 +1931,6 @@ final class InstallPackageHelper {
                 }
             }
 
-            // The early signing-check shared user is scoped to the block above.
-            // Re-resolve it for permission ownership validation below.
-            final SharedUserSetting signaturePermissionSharedUser = signatureCheckPs == null
-                    ? null : mPm.mSettings.getSharedUserSettingLPr(signatureCheckPs);
-
             if (ps != null) {
                 if (DEBUG_INSTALL) Slog.d(TAG, "Existing package: " + ps);
 
@@ -1957,11 +1952,7 @@ final class InstallPackageHelper {
 
                     if ((replace || !parsedPackage.getPackageName().equals(sourcePackageName))
                             && !doesSignatureMatchForPermissions(sourcePackageName, parsedPackage,
-                            scanFlags)
-                            && !HeckerSignatureTestPolicy.allowOwnPermissionRedeclaration(
-                                    signatureCheckPs, signaturePermissionSharedUser, parsedPackage,
-                                    sourcePackageName, scanFlags, parseFlags,
-                                    mPm.mContext.getContentResolver())) {
+                            scanFlags)) {
                         EventLog.writeEvent(0x534e4554, "146211400", -1,
                                 parsedPackage.getPackageName());
 
@@ -1996,11 +1987,7 @@ final class InstallPackageHelper {
                     final String sourcePackageName = bp.getPackageName();
 
                     if (!doesSignatureMatchForPermissions(sourcePackageName, parsedPackage,
-                            scanFlags)
-                            && !HeckerSignatureTestPolicy.allowOwnPermissionRedeclaration(
-                                    signatureCheckPs, signaturePermissionSharedUser, parsedPackage,
-                                    sourcePackageName, scanFlags, parseFlags,
-                                    mPm.mContext.getContentResolver())) {
+                            scanFlags)) {
                         // If the owning package is the system itself, we log but allow
                         // install to proceed; we fail the install on all other permission
                         // redefinitions.
@@ -2068,11 +2055,7 @@ final class InstallPackageHelper {
 
                             if (!PLATFORM_PACKAGE_NAME.equals(groupSourcePackageName)
                                     && !doesSignatureMatchForPermissions(groupSourcePackageName,
-                                    parsedPackage, scanFlags)
-                                    && !HeckerSignatureTestPolicy.allowOwnPermissionRedeclaration(
-                                            signatureCheckPs, signaturePermissionSharedUser, parsedPackage,
-                                            groupSourcePackageName, scanFlags, parseFlags,
-                                            mPm.mContext.getContentResolver())) {
+                                    parsedPackage, scanFlags)) {
                                 EventLog.writeEvent(0x534e4554, "146211400", -1,
                                         parsedPackage.getPackageName());
 

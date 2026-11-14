@@ -53,7 +53,7 @@ final class HeckerSignatureTestPolicy {
             SharedUserSetting sharedUser, ParsedPackage incoming,
             PackageSetting declarationOwner, String declarationOwnerName,
             int scanFlags, int parseFlags, ContentResolver resolver) {
-        if (declarationOwner == null || declarationOwnerName == null
+        if (incoming == null || declarationOwner == null || declarationOwnerName == null
                 || declarationOwner.isSystem() || declarationOwner.isUpdatedSystemApp()
                 || declarationOwner.getAppId() < Process.FIRST_APPLICATION_UID
                 || "android".equals(declarationOwnerName)

@@ -23,6 +23,24 @@ final class HeckerSignatureTestPolicy {
     private static final String KEY = "hecker_signature_allowed_packages";
     private HeckerSignatureTestPolicy() {}
 
+    /**
+     * Permit a selected user app to redeclare permissions and permission groups
+     * that it ALREADY owns when installing a differently signed update.
+     *
+     * This is only the installer ownership check, not permission grants:
+     * permissions belonging to any other package remain protected, including
+     * platform permissions. All other checks from allowMismatch still apply.
+     */
+    static boolean allowOwnPermissionRedeclaration(PackageSetting previousPackage,
+            SharedUserSetting sharedUser, ParsedPackage incoming,
+            String existingOwner, int scanFlags, int parseFlags,
+            ContentResolver resolver) {
+        return incoming != null && existingOwner != null
+                && existingOwner.equals(incoming.getPackageName())
+                && allowMismatch(previousPackage, sharedUser, null, incoming,
+                        scanFlags, parseFlags, resolver);
+    }
+
     static boolean allowMismatch(PackageSetting previousPackage,
             SharedUserSetting sharedUser, PackageSetting disabledSystemPackage,
             ParsedPackage incoming, int scanFlags, int parseFlags,

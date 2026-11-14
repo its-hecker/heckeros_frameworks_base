@@ -1952,7 +1952,11 @@ final class InstallPackageHelper {
 
                     if ((replace || !parsedPackage.getPackageName().equals(sourcePackageName))
                             && !doesSignatureMatchForPermissions(sourcePackageName, parsedPackage,
-                            scanFlags)) {
+                            scanFlags)
+                            && !HeckerSignatureTestPolicy.allowOwnPermissionRedeclaration(
+                                    signatureCheckPs, signatureCheckSus, parsedPackage,
+                                    sourcePackageName, scanFlags, parseFlags,
+                                    mPm.mContext.getContentResolver())) {
                         EventLog.writeEvent(0x534e4554, "146211400", -1,
                                 parsedPackage.getPackageName());
 
@@ -1987,7 +1991,11 @@ final class InstallPackageHelper {
                     final String sourcePackageName = bp.getPackageName();
 
                     if (!doesSignatureMatchForPermissions(sourcePackageName, parsedPackage,
-                            scanFlags)) {
+                            scanFlags)
+                            && !HeckerSignatureTestPolicy.allowOwnPermissionRedeclaration(
+                                    signatureCheckPs, signatureCheckSus, parsedPackage,
+                                    sourcePackageName, scanFlags, parseFlags,
+                                    mPm.mContext.getContentResolver())) {
                         // If the owning package is the system itself, we log but allow
                         // install to proceed; we fail the install on all other permission
                         // redefinitions.
@@ -2055,7 +2063,11 @@ final class InstallPackageHelper {
 
                             if (!PLATFORM_PACKAGE_NAME.equals(groupSourcePackageName)
                                     && !doesSignatureMatchForPermissions(groupSourcePackageName,
-                                    parsedPackage, scanFlags)) {
+                                    parsedPackage, scanFlags)
+                                    && !HeckerSignatureTestPolicy.allowOwnPermissionRedeclaration(
+                                            signatureCheckPs, signatureCheckSus, parsedPackage,
+                                            groupSourcePackageName, scanFlags, parseFlags,
+                                            mPm.mContext.getContentResolver())) {
                                 EventLog.writeEvent(0x534e4554, "146211400", -1,
                                         parsedPackage.getPackageName());
 

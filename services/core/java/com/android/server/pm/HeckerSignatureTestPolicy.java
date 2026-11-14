@@ -23,6 +23,23 @@ final class HeckerSignatureTestPolicy {
     private static final String KEY = "hecker_signature_allowed_packages";
     private HeckerSignatureTestPolicy() {}
 
+    /**
+     * When a selected user app is updated under a different signing key, its
+     * own previously declared permissions and groups still belong to that
+     * package. Do not permit any third-party permission ownership collision.
+     * This exception is install-only; it never fabricates a signature match
+     * for permission grants, shared UIDs, or other consumers.
+     */
+    static boolean allowOwnPermissionRedeclaration(PackageSetting previousPackage,
+            SharedUserSetting sharedUser, ParsedPackage incoming,
+            String permissionOwner, int scanFlags, int parseFlags,
+            ContentResolver resolver) {
+        return permissionOwner != null && incoming != null
+                && permissionOwner.equals(incoming.getPackageName())
+                && allowMismatch(previousPackage, sharedUser, null, incoming,
+                        scanFlags, parseFlags, resolver);
+    }
+
     static boolean allowMismatch(PackageSetting previousPackage,
             SharedUserSetting sharedUser, PackageSetting disabledSystemPackage,
             ParsedPackage incoming, int scanFlags, int parseFlags,

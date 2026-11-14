@@ -1961,7 +1961,10 @@ final class InstallPackageHelper {
                             && !HeckerSignatureTestPolicy.allowOwnPermissionRedeclaration(
                                     signatureCheckPs, ownPermissionSharedUser, parsedPackage,
                                     sourcePackageName, scanFlags, parseFlags,
-                                    mPm.mContext.getContentResolver())) {
+                                    mPm.mContext.getContentResolver())
+                            && !allowPreviousSignatureForDeclaration(
+                                    signatureCheckPs, ownPermissionSharedUser, parsedPackage,
+                                    sourcePackageName, scanFlags, parseFlags)) {
                         EventLog.writeEvent(0x534e4554, "146211400", -1,
                                 parsedPackage.getPackageName());
 
@@ -2000,7 +2003,10 @@ final class InstallPackageHelper {
                             && !HeckerSignatureTestPolicy.allowOwnPermissionRedeclaration(
                                     signatureCheckPs, ownPermissionSharedUser, parsedPackage,
                                     sourcePackageName, scanFlags, parseFlags,
-                                    mPm.mContext.getContentResolver())) {
+                                    mPm.mContext.getContentResolver())
+                            && !allowPreviousSignatureForDeclaration(
+                                    signatureCheckPs, ownPermissionSharedUser, parsedPackage,
+                                    sourcePackageName, scanFlags, parseFlags)) {
                         // If the owning package is the system itself, we log but allow
                         // install to proceed; we fail the install on all other permission
                         // redefinitions.
@@ -2073,7 +2079,11 @@ final class InstallPackageHelper {
                                             signatureCheckPs, ownPermissionSharedUser,
                                             parsedPackage, groupSourcePackageName,
                                             scanFlags, parseFlags,
-                                            mPm.mContext.getContentResolver())) {
+                                            mPm.mContext.getContentResolver())
+                                    && !allowPreviousSignatureForDeclaration(
+                                            signatureCheckPs, ownPermissionSharedUser,
+                                            parsedPackage, groupSourcePackageName,
+                                            scanFlags, parseFlags)) {
                                 EventLog.writeEvent(0x534e4554, "146211400", -1,
                                         parsedPackage.getPackageName());
 
@@ -2533,6 +2543,22 @@ final class InstallPackageHelper {
     @SuppressWarnings("AndroidFrameworkCompatChange")
     private static boolean cannotInstallWithBadPermissionGroups(ParsedPackage parsedPackage) {
         return parsedPackage.getTargetSdkVersion() >= Build.VERSION_CODES.S;
+    }
+
+    // Unlike a global CorePatch hook, this only runs while preparing an
+    // explicitly selected user-app update. The original installed identity
+    // must already have been authorized to declare in the owning app's group.
+    private boolean allowPreviousSignatureForDeclaration(PackageSetting previousPackage,
+            SharedUserSetting sharedUser, ParsedPackage incoming, String declarationOwnerName,
+            int scanFlags, int parseFlags) {
+        final PackageSetting declarationOwner;
+        synchronized (mPm.mLock) {
+            declarationOwner = mPm.mSettings.getPackageLPr(declarationOwnerName);
+        }
+        return HeckerSignatureTestPolicy.allowPreviousSignatureForDeclaration(
+                previousPackage, sharedUser, incoming, declarationOwner,
+                declarationOwnerName, scanFlags, parseFlags,
+                mPm.mContext.getContentResolver());
     }
 
     private boolean doesSignatureMatchForPermissions(@NonNull String sourcePackageName,

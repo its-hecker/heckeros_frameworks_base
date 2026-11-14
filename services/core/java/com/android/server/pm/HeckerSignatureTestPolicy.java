@@ -41,6 +41,41 @@ final class HeckerSignatureTestPolicy {
                         scanFlags, parseFlags, resolver);
     }
 
+    /**
+     * CorePatch-style previous-signature compatibility, narrowed to a single
+     * opted-in user-app update. Retain only declaration relationships that the
+     * previously installed version could have made with another *user app*.
+     *
+     * Never use this for signature permission grants, signature spoofing, or
+     * permissions owned by system/privileged packages.
+     */
+    static boolean allowPreviousSignatureForDeclaration(PackageSetting previousPackage,
+            SharedUserSetting sharedUser, ParsedPackage incoming,
+            PackageSetting declarationOwner, String declarationOwnerName,
+            int scanFlags, int parseFlags, ContentResolver resolver) {
+        if (declarationOwner == null || declarationOwnerName == null
+                || declarationOwner.isSystem() || declarationOwner.isUpdatedSystemApp()
+                || declarationOwner.getAppId() < Process.FIRST_APPLICATION_UID
+                || "android".equals(declarationOwnerName)
+                || !declarationOwnerName.equals(declarationOwner.getPackageName())
+                || declarationOwnerName.equals(incoming.getPackageName())
+                || !allowMismatch(previousPackage, sharedUser, null, incoming,
+                        scanFlags, parseFlags, resolver)) {
+            return false;
+        }
+        final SigningDetails oldSigners = previousPackage.getSigningDetails();
+        final SigningDetails ownerSigners = declarationOwner.getSigningDetails();
+        return oldSigners != null && ownerSigners != null
+                && oldSigners != SigningDetails.UNKNOWN
+                && ownerSigners != SigningDetails.UNKNOWN
+                && oldSigners.getSignatures() != null
+                && ownerSigners.getSignatures() != null
+                && (ownerSigners.checkCapability(oldSigners,
+                        SigningDetails.CertCapabilities.PERMISSION)
+                    || oldSigners.checkCapability(ownerSigners,
+                        SigningDetails.CertCapabilities.PERMISSION));
+    }
+
     static boolean allowMismatch(PackageSetting previousPackage,
             SharedUserSetting sharedUser, PackageSetting disabledSystemPackage,
             ParsedPackage incoming, int scanFlags, int parseFlags,
